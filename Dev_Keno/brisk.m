@@ -43,7 +43,7 @@ function brisk()
 
         %% DEBUG: Registrierte Bilder anzeigen
         figure('Name', ['Registriertes Bild: ', imageFiles{i}], 'NumberTitle', 'off');
-        subplot(1,3,1); imshow(gray); title('Original (aktuell)');
+        subplot(1,3,1); imshow(refGray); title('Referenz (aktuell)');
         subplot(1,3,2); imshow(registered); title('Registriert (ausgerichtet)');
         subplot(1,3,3);
         imshowpair(refGray, registered);
@@ -89,13 +89,13 @@ function [registered2, validMask] = registerImages(gray1, gray2)
     try
         % BRISK
         % https://de.mathworks.com/help/vision/ug/local-feature-detection-and-extraction.html
-        pts1BRISK = detectBRISKFeatures(gray1,MinContrast=0.01);
-        pts2BRISK = detectBRISKFeatures(gray2,MinContrast=0.01);
+        pts1BRISK = detectBRISKFeatures(gray1,MinContrast=0.1);
+        pts2BRISK = detectBRISKFeatures(gray2,MinContrast=0.1);
 
         [f1BRISK, vpts1BRISK] = extractFeatures(gray1, pts1BRISK);
         [f2BRISK, vpts2BRISK] = extractFeatures(gray2, pts2BRISK);
         
-        indexPairsBRISK = matchFeatures(f1BRISK, f2BRISK, MatchThreshold=95, MaxRatio=0.8);
+        indexPairsBRISK = matchFeatures(f1BRISK, f2BRISK, MatchThreshold=10, MaxRatio=0.7);
 
         if size(indexPairsBRISK, 1) < 3
             warning('Zu wenige Übereinstimmungen für Registrierung.');
