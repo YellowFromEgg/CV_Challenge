@@ -1,4 +1,5 @@
-function main()
+function brisk()
+    close all;
     %% 1. Ordner mit Bildern wählen
     imageFolder = uigetdir(pwd, 'Wähle Ordner mit Satellitenbildern aus');
     if imageFolder == 0
@@ -86,14 +87,28 @@ end
 %% --- Registrierung basierend auf SURF Features ---
 function [registered2, validMask] = registerImages(gray1, gray2)
     try
-        % SURF -> faster, less accurate
-        % https://de.mathworks.com/help/vision/ref/detectsurffeatures.html
+        % BRISK
+        % https://de.mathworks.com/help/vision/ug/local-feature-detection-and-extraction.html
+        pts1BRISK = detectBRISKFeatures(gray1,MinContrast=0.01);
+        pts2BRISK = detectBRISKFeatures(gray2,MinContrast=0.01);
+
+        [f1BRISK, vpts1BRISK] = extractFeatures(gray1, pts1BRISK);
+        [f2BRISK, vpts2BRISK] = extractFeatures(gray2, pts2BRISK);
+        
+        indexPairsBRISK = matchFeatures(f1BRISK, f2BRISK, MatchThreshold=95, MaxRatio=0.8);
+
+        if size(indexPairsBRISK, 1) < 3
+            warning('Zu wenige Übereinstimmungen für Registrierung.');
+            registered2 = [];
+            validMask = [];
+            return;
+        end
+        
+        matched1BRISK = vpts1BRISK(indexPairsBRISK(:,1));
+        matched2BRISK = vpts2BRISK(indexPairsBRISK(:,2));
+
         pts1 = detectSURFFeatures(gray1, 'MetricThreshold', 1000, 'NumOctaves', 6);
         pts2 = detectSURFFeatures(gray2, 'MetricThreshold', 1000, 'NumOctaves', 6);
-        
-        % SIFT -> slower, more accurate
-        %pts1 = detectSIFTFeatures(gray1, 'NumOctaves', 5, 'NumScaleLevels', 6);
-        %pts2 = detectSIFTFeatures(gray2, 'NumOctaves', 5, 'NumScaleLevels', 6);
 
         [f1, vpts1] = extractFeatures(gray1, pts1);
         [f2, vpts2] = extractFeatures(gray2, pts2);
@@ -107,9 +122,12 @@ function [registered2, validMask] = registerImages(gray1, gray2)
             return;
         end
         
-        matched1 = vpts1(indexPairs(:,1));
-        matched2 = vpts2(indexPairs(:,2));
+        matched1SURF = vpts1(indexPairs(:,1));
+        matched2SURF = vpts2(indexPairs(:,2));
 
+        % Combine SURF and BRISK
+        matched1 = [matched1SURF.Location; matched1BRISK.Location];
+        matched2 = [matched2SURF.Location; matched2BRISK.Location];
         %% DEBUG: Korrespondenzpunkte anzeigen
         figure('Name', 'Korrespondenzpunkte');
         showMatchedFeatures(gray1, gray2, matched1, matched2, 'montage');
