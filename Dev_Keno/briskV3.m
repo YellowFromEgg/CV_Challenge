@@ -142,9 +142,9 @@ function optimalIdx = findOptimalReference(imageFolder, imageFiles)
         % Average feature count when used as reference
         avgFeatureCount = mean(featureCountMatrix(i, :));
         
-        % Bonus for images in the middle of the time series (often more stable)
+        % Bonus for images in the middle of the time series
         temporalPosition = sampleIndices(i) / numImages;
-        temporalBonus = 1 - abs(temporalPosition - 0.5); % Peak at 0.5 (middle)
+        temporalBonus = 1 - abs(temporalPosition - 0.5); % Peak at 0.5
         
         % Combined score
         referenceScores(i) = successRate * 0.6 + ...
@@ -292,7 +292,7 @@ function [registered2, validMask] = registerImages(gray1, gray2, imageName, show
         warpedMask = imwarp(mask, tform, 'OutputView', outputRef);
         validMask = warpedMask > 0.5;
 
-        %% COMPREHENSIVE DEBUG OUTPUT - FIXED FOR COMPATIBILITY
+        %% COMPREHENSIVE DEBUG OUTPUT
         if showDebug
             % Create main debug figure
             figName = sprintf('Registration Debug: %s', imageName);
@@ -405,8 +405,6 @@ function [registered2, validMask] = registerImages(gray1, gray2, imageName, show
                     'EdgeColor', 'none', 'HorizontalAlignment', 'center', 'FontSize', 14, 'FontWeight', 'bold');
             end
             
-            % Optional: Save debug figure
-            % saveas(fig, fullfile(pwd, sprintf('debug_%s.png', regexprep(imageName, '[^\w]', '_'))));
         end
 
     catch ME
@@ -416,7 +414,7 @@ function [registered2, validMask] = registerImages(gray1, gray2, imageName, show
     end
 end
 
-%% --- Enhanced preprocessing (same as before) ---
+%% --- Enhanced preprocessing ---
 function grayImage = preprocessImage(img, showFigure)
     if nargin < 2
         showFigure = false;
