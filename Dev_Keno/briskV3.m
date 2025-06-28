@@ -39,25 +39,38 @@ function briskV3()
     fprintf('\n=== Processing images against optimal reference ===\n');
     skippedImages = {};
     processedCount = 0;
+
+    % Storage for registered color images
+    registeredColorImages = cell(numImages, 1);
+    validImageIndices = [];
     
     for i = 1:numImages
         if i == refIdx
+            % Store reference image
+            registeredColorImages{i} = refImg;
+            validImageIndices = [validImageIndices, i];
             continue; % Skip the reference image itself
         end
         
         fprintf('Processing image %d/%d: %s\n', i, numImages, imageFiles{i});
         
+        % Load both color and grayscale
         img = imread(fullfile(imageFolder, imageFiles{i}));
         gray = preprocessImage(img, false);
         
-        % Registration with debug output
-        [registered, validMask] = registerImages(refGray, gray, imageFiles{i}, true); % Enable debug
-
+        % Registration with color image support
+        [registered, validMask, registeredColor] = registerImages(refGray, gray, imageFiles{i}, true, refImg, img);
+    
         if isempty(registered)
             skippedImages{end+1} = imageFiles{i};
             fprintf('  -> Skipped due to registration failure\n');
             continue;
         end
+
+        % Store the registered color image
+        registeredColorImages{i} = registeredColor;
+        validImageIndices = [validImageIndices, i];
+
 
         % Calculate difference
         diffImage = imabsdiff(refGray, registered);
@@ -86,6 +99,8 @@ function briskV3()
     %% 5. Visualize results
     cumulativeDiff(~totalMask) = 0;
     visualizeDifferenceHeatmap(cumulativeDiff, totalMask);
+
+    displayRegisteredColorImages(registeredColorImages, validImageIndices, imageFiles, refIdx);
     
     fprintf('\nProcessing complete!\n');
 end
@@ -210,13 +225,22 @@ function [success, featureCount] = testRegistration(gray1, gray2)
 end
 
 %% --- Enhanced registration function with comprehensive debug output ---
-function [registered2, validMask] = registerImages(gray1, gray2, imageName, showDebug)
+function [registered2, validMask, registeredColor] = registerImages(gray1, gray2, imageName, showDebug, colorImg1, colorImg2)
     if nargin < 3
         imageName = 'Current Image';
     end
     if nargin < 4
         showDebug = false;
     end
+    if nargin < 5
+        colorImg1 = [];
+    end
+    if nargin < 6
+        colorImg2 = [];
+    end
+
+    registeredColor = []; % Initialize output
+
     
     try
         % Feature detection with multiple methods
@@ -259,14 +283,18 @@ function [registered2, validMask] = registerImages(gray1, gray2, imageName, show
         end
 
         if size(matched1, 1) < 4
-            warning('Insufficient matches (%d) for %s', size(matched1, 1), imageName);
+            if showDebug
+                warning('Insufficient matches (%d) for %s', size(matched1, 1), imageName);
+            end
             registered2 = [];
             validMask = [];
+            registeredColor = [];
             return;
         end
 
-        fprintf('  Total matches: %d\n', size(matched1, 1));
-
+        if showDebug
+            fprintf('  Total matches: %d\n', size(matched1, 1));
+        end
         % Robust transformation estimation
         [tform, inlierIdx] = estgeotform2d(matched2, matched1, 'similarity', ...
             'MaxNumTrials', 3000, 'Confidence', 90);
@@ -274,20 +302,42 @@ function [registered2, validMask] = registerImages(gray1, gray2, imageName, show
         inlierCount = sum(inlierIdx);
         inlierRatio = inlierCount / length(inlierIdx);
         
-        fprintf('  Inliers: %d/%d (%.1f%%)\n', inlierCount, length(inlierIdx), inlierRatio*100);
-        
+        if showDebug
+            fprintf('  Inliers: %d/%d (%.1f%%)\n', inlierCount, length(inlierIdx), inlierRatio*100);
+        end 
+
         if inlierCount < 4
-            warning('Too few inliers (%d) for %s', inlierCount, imageName);
+            if showDebug
+                warning('Too few inliers (%d) for %s', inlierCount, imageName);
+            end
             registered2 = [];
             validMask = [];
+            registeredColor = [];
             return;
         end
 
-        % Apply transformation
+        % Apply transformation to grayscale image
         outputRef = imref2d(size(gray1));
         registered2 = imwarp(gray2, tform, 'OutputView', outputRef, ...
             'Interp', 'linear', 'FillValues', 0);
 
+        % Apply same transformation to color image if provided
+        if ~isempty(colorImg2)
+            if size(colorImg2, 3) == 3
+                % Register each color channel separately
+                registeredColor = zeros([size(gray1), 3], 'like', colorImg2);
+                for ch = 1:3
+                    registeredColor(:,:,ch) = imwarp(colorImg2(:,:,ch), tform, ...
+                        'OutputView', outputRef, 'Interp', 'linear', 'FillValues', 0);
+                end
+            else
+                % Single channel color image
+                registeredColor = imwarp(colorImg2, tform, 'OutputView', outputRef, ...
+                    'Interp', 'linear', 'FillValues', 0);
+            end
+        end
+
+        % Create valid mask
         mask = ones(size(gray2));
         warpedMask = imwarp(mask, tform, 'OutputView', outputRef);
         validMask = warpedMask > 0.5;
@@ -408,9 +458,12 @@ function [registered2, validMask] = registerImages(gray1, gray2, imageName, show
         end
 
     catch ME
-        warning('Registration failed for %s: %s', imageName, ME.message);
+        if showDebug
+            warning('Registration failed for %s: %s', imageName, ME.message);
+        end
         registered2 = [];
         validMask = [];
+        registeredColor = [];
     end
 end
 
@@ -531,4 +584,67 @@ function sorted = sort_nat(filenames)
     years = cellfun(@str2double, years);
     [~, idx] = sort(years);
     sorted = filenames(idx);
+end
+
+%% --- Display all registered color images in a grid ---
+function displayRegisteredColorImages(registeredColorImages, validIndices, imageFiles, refIdx)
+    % Remove empty cells and get valid images
+    validImages = registeredColorImages(validIndices);
+    validFiles = imageFiles(validIndices);
+    
+    numImages = length(validImages);
+    if numImages == 0
+        fprintf('No valid registered images to display.\n');
+        return;
+    end
+    
+    % Calculate grid dimensions
+    cols = ceil(sqrt(numImages));
+    rows = ceil(numImages / cols);
+    
+    % Create figure
+    figure('Name', 'All Registered Color Images', 'NumberTitle', 'off', ...
+           'Position', [50, 50, min(1800, cols*300), min(1200, rows*250)]);
+    
+    for i = 1:numImages
+        subplot(rows, cols, i);
+        
+        if ~isempty(validImages{i})
+            imshow(validImages{i});
+            
+            % Add title with special marking for reference
+            if validIndices(i) == refIdx
+                title(sprintf('%d: %s (REF)', validIndices(i), validFiles{i}), ...
+                      'FontSize', 10, 'FontWeight', 'bold', 'Color', 'red');
+            else
+                title(sprintf('%d: %s', validIndices(i), validFiles{i}), ...
+                      'FontSize', 9);
+            end
+        else
+            % Show placeholder for failed registration
+            axis off;
+            text(0.5, 0.5, 'Registration Failed', 'HorizontalAlignment', 'center', ...
+                 'VerticalAlignment', 'middle', 'FontSize', 12, 'Color', 'red');
+            title(sprintf('%d: %s (FAILED)', validIndices(i), validFiles{i}), ...
+                  'FontSize', 9, 'Color', 'red');
+        end
+        
+        axis off;
+    end
+    
+    % Add overall title
+    try
+        sgtitle(sprintf('Registered Color Images (%d/%d successful)', ...
+                numImages, length(registeredColorImages)), ...
+                'FontSize', 14, 'FontWeight', 'bold');
+    catch
+        % Fallback for older MATLAB versions
+        annotation('textbox', [0 0.95 1 0.05], ...
+                   'String', sprintf('Registered Color Images (%d/%d successful)', ...
+                                   numImages, length(registeredColorImages)), ...
+                   'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
+                   'FontSize', 14, 'FontWeight', 'bold');
+    end
+    
+    fprintf('\nDisplayed %d registered color images in grid format.\n', numImages);
 end
