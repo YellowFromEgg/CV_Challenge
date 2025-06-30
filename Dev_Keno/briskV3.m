@@ -1,5 +1,6 @@
 function briskV3()
     close all;
+    tStart = tic;
     
     %% 1. Select image folder
     imageFolder = uigetdir(pwd, 'Select satellite image folder');
@@ -103,6 +104,9 @@ function briskV3()
     displayRegisteredColorImages(registeredColorImages, validImageIndices, imageFiles, refIdx);
     
     fprintf('\nProcessing complete!\n');
+
+    elapsedTime = toc(tStart);  % Time in seconds
+    fprintf('Elapsed time: %.4f seconds\n', elapsedTime);
 end
 
 %% --- Find optimal reference image based on feature matching success ---
@@ -186,16 +190,21 @@ function [success, featureCount] = testRegistration(gray1, gray2)
     featureCount = 0;
     
     try
+        % Crop images to remove scale/logo area
+        cropRatio = 0.07;
+        gray1Cropped = cropImageForFeatureDetection(gray1, cropRatio);
+        gray2Cropped = cropImageForFeatureDetection(gray2, cropRatio);
+
         % Quick feature detection and matching
-        pts1 = detectSURFFeatures(gray1, 'MetricThreshold', 1000);
-        pts2 = detectSURFFeatures(gray2, 'MetricThreshold', 1000);
+        pts1 = detectSURFFeatures(gray1Cropped, 'MetricThreshold', 1000);
+        pts2 = detectSURFFeatures(gray2Cropped, 'MetricThreshold', 1000);
         
         if pts1.Count < 10 || pts2.Count < 10
             return;
         end
         
-        [f1, vpts1] = extractFeatures(gray1, pts1);
-        [f2, vpts2] = extractFeatures(gray2, pts2);
+        [f1, vpts1] = extractFeatures(gray1Cropped, pts1);
+        [f2, vpts2] = extractFeatures(gray2Cropped, pts2);
         
         indexPairs = matchFeatures(f1, f2, 'Unique', true, 'MaxRatio', 0.7);
         
@@ -224,6 +233,24 @@ function [success, featureCount] = testRegistration(gray1, gray2)
     end
 end
 
+%% --- Create cropped images for feature detection
+function croppedImage = cropImageForFeatureDetection(image, cropRatio)
+    % Crop the bottom portion of the image to remove scale/logo
+    % cropRatio: fraction to remove from bottom (e.g., 0.1 = remove bottom 10%)
+    if nargin < 2
+        cropRatio = 0.08; % Default: remove bottom 8%
+    end
+    
+    [height, ~, ~] = size(image);
+    cropHeight = round(height * (1 - cropRatio));
+    
+    if length(size(image)) == 3
+        croppedImage = image(1:cropHeight, :, :);
+    else
+        croppedImage = image(1:cropHeight, :);
+    end
+end
+
 %% --- Enhanced registration function with comprehensive debug output ---
 function [registered2, validMask, registeredColor] = registerImages(gray1, gray2, imageName, showDebug, colorImg1, colorImg2)
     if nargin < 3
@@ -240,24 +267,33 @@ function [registered2, validMask, registeredColor] = registerImages(gray1, gray2
     end
 
     registeredColor = []; % Initialize output
-
     
     try
-        % Feature detection with multiple methods
-        pts1SURF = detectSURFFeatures(gray1, 'MetricThreshold', 500, 'NumOctaves', 6);
-        pts2SURF = detectSURFFeatures(gray2, 'MetricThreshold', 500, 'NumOctaves', 6);
+        % Crop images for feature detection
+        cropRatio = 0.07; % Remove bottom 7% of image
+        gray1Cropped = cropImageForFeatureDetection(gray1, cropRatio);
+        gray2Cropped = cropImageForFeatureDetection(gray2, cropRatio);
+        
+        if showDebug
+            fprintf('  Original size: %dx%d, Cropped size: %dx%d\n', ...
+                size(gray1,1), size(gray1,2), size(gray1Cropped,1), size(gray1Cropped,2));
+        end
 
-        [f1SURF, vpts1SURF] = extractFeatures(gray1, pts1SURF);
-        [f2SURF, vpts2SURF] = extractFeatures(gray2, pts2SURF);
+        % Feature detection with multiple methods
+        pts1SURF = detectSURFFeatures(gray1Cropped, 'MetricThreshold', 500, 'NumOctaves', 6);
+        pts2SURF = detectSURFFeatures(gray2Cropped, 'MetricThreshold', 500, 'NumOctaves', 6);
+
+        [f1SURF, vpts1SURF] = extractFeatures(gray1Cropped, pts1SURF);
+        [f2SURF, vpts2SURF] = extractFeatures(gray2Cropped, pts2SURF);
 
         indexPairsSURF = matchFeatures(f1SURF, f2SURF, 'Unique', true, 'MaxRatio', 0.8);
 
         % Add BRISK for robustness
-        pts1BRISK = detectBRISKFeatures(gray1, 'MinContrast', 0.02, 'NumOctaves', 5);
-        pts2BRISK = detectBRISKFeatures(gray2, 'MinContrast', 0.02, 'NumOctaves', 5);
+        pts1BRISK = detectBRISKFeatures(gray1Cropped, 'MinContrast', 0.02, 'NumOctaves', 5);
+        pts2BRISK = detectBRISKFeatures(gray2Cropped, 'MinContrast', 0.02, 'NumOctaves', 5);
 
-        [f1BRISK, vpts1BRISK] = extractFeatures(gray1, pts1BRISK, 'Method', 'BRISK');
-        [f2BRISK, vpts2BRISK] = extractFeatures(gray2, pts2BRISK, 'Method', 'BRISK');
+        [f1BRISK, vpts1BRISK] = extractFeatures(gray1Cropped, pts1BRISK, 'Method', 'BRISK');
+        [f2BRISK, vpts2BRISK] = extractFeatures(gray2Cropped, pts2BRISK, 'Method', 'BRISK');
         
         indexPairsBRISK = matchFeatures(f1BRISK, f2BRISK, ...
             'MatchThreshold', 15, 'MaxRatio', 0.8, 'Unique', true);
