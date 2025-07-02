@@ -7,6 +7,12 @@ function briskV3()
         disp('No folder selected. Aborting.');
         return;
     end
+    % Create output folder with "_processed" suffix
+    [folderPath, folderName] = fileparts(imageFolder);
+    outputFolder = fullfile(folderPath, [folderName '_processed']);
+    if ~exist(outputFolder, 'dir')
+        mkdir(outputFolder);
+    end
 
     %% 2. Load and sort images
     imageFiles = [dir(fullfile(imageFolder, '*.jpg')); 
@@ -51,7 +57,7 @@ function briskV3()
         gray = preprocessImage(img, false);
         
         % Registration with debug output
-        [registered, validMask] = registerImages(refGray, gray, imageFiles{i}, true); % Enable debug
+        [registered, validMask] = registerImages(refGray, gray, imageFiles{i}, true, outputFolder); % Enable debug
 
         if isempty(registered)
             skippedImages{end+1} = imageFiles{i};
@@ -69,13 +75,19 @@ function briskV3()
         processedCount = processedCount + 1;
         
         fprintf('  -> Successfully registered and processed\n');
+        % === Save Registered Image and Valid Mask ===
+        [~, baseName, ~] = fileparts(imageFiles{i});
+        registeredFilename = fullfile(outputFolder, [baseName '_registered.png']);
+        maskFilename = fullfile(outputFolder, [baseName '_validMask.png']);
+        imwrite(registered, registeredFilename);
+        imwrite(validMask, maskFilename);
     end
 
     fprintf('\n=== Processing Summary ===\n');
     fprintf('Reference image: %s\n', imageFiles{refIdx});
     fprintf('Successfully processed: %d/%d images (%.1f%%)\n', ...
         processedCount, numImages-1, 100*processedCount/(numImages-1));
-    
+
     if ~isempty(skippedImages)
         fprintf('Skipped images:\n');
         for i = 1:length(skippedImages)
@@ -210,7 +222,7 @@ function [success, featureCount] = testRegistration(gray1, gray2)
 end
 
 %% --- Enhanced registration function with comprehensive debug output ---
-function [registered2, validMask] = registerImages(gray1, gray2, imageName, showDebug)
+function [registered2, validMask] = registerImages(gray1, gray2, imageName, showDebug, outputFolder)
     if nargin < 3
         imageName = 'Current Image';
     end
@@ -405,6 +417,14 @@ function [registered2, validMask] = registerImages(gray1, gray2, imageName, show
                     'EdgeColor', 'none', 'HorizontalAlignment', 'center', 'FontSize', 14, 'FontWeight', 'bold');
             end
             
+        end
+
+        if showDebug && exist('outputFolder', 'var')
+            [~, baseName, ~] = fileparts(imageName);
+            debugFigName = sprintf('%s_debug.png', baseName);
+            debugFigPath = fullfile(outputFolder, debugFigName);
+            saveas(fig, debugFigPath);
+            close(fig); % Optional: avoid open windows
         end
 
     catch ME
