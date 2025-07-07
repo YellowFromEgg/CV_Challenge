@@ -1,199 +1,192 @@
-function [registeredColorImages, validImageIndices, imageFiles, refIdx, tformList] = Register_Color_Images(imageFiles, colorImages, numImages)
-    close all;
-    tStart = tic;
+function [registeredColorImages, validImageIndices, refIdx, tformList] = Register_Color_Images(colorImages, numImages, scene)
+    close all; % Close all figure windows
+    tStart = tic; % Start timing the entire registration process
 
-    %% 3. Preprocess ALL images once and cache them
-    grayImages = cell(numImages, 1);
+    %% 1. Preprocess ALL images once and cache them
+    grayImages = cell(numImages, 1); % Initialize cell array to store grayscale versions
     
     for i = 1:numImages
         % Preprocess to grayscale (only show debug for first image)
-        grayImages{i} = preprocessImage(colorImages{i});
+        grayImages{i} = preprocessImage(colorImages{i}, scene); % Convert each color image to enhanced grayscale
     end
 
-    %% 4. Find optimal reference using cached preprocessed images
-    refIdx = findOptimalReference(grayImages);
+    %% 2. Find optimal reference using cached preprocessed images
+    refIdx = findOptimalReference(grayImages, scene); % Determine which image works best as reference
     
     % Get reference images
-    refImg = colorImages{refIdx};
-    refGray = grayImages{refIdx};
+    refImg = colorImages{refIdx}; % Original color reference image
+    refGray = grayImages{refIdx}; % Preprocessed grayscale reference image
 
-    %% 5. Process all other images against the optimal reference
+    %% 3. Process all other images against the optimal reference
     % Storage for registered color images
-    registeredColorImages = cell(numImages, 1);
-    tformList = cell(numImages, 1);
-    validImageIndices = [];
+    registeredColorImages = cell(numImages, 1); % Store final registered color images
+    tformList = cell(numImages, 1); % Store transformation matrices for each image
+    validImageIndices = []; % Track which images were successfully registered
     
     for i = 1:numImages
         if i == refIdx
             % Store reference image
-            registeredColorImages{i} = refImg;
-            validImageIndices = [validImageIndices, i];
+            registeredColorImages{i} = refImg; % Reference image doesn't need transformation
+            validImageIndices = [validImageIndices, i]; % Add reference to valid list
 
             continue; % Skip the reference image itself
         end
         
         % Use cached preprocessed images
-        img = colorImages{i};
-        gray = grayImages{i};
+        img = colorImages{i}; % Current color image to register
+        gray = grayImages{i}; % Current preprocessed grayscale image
         
         % Registration with color image support - also support matrices
-        [registeredColor, tform] = registerImages(refGray, gray, img);
-        tformList{i} = tform;
+        [registeredColor, tform] = registerImages(refGray, gray, img, scene); % Register current image to reference
+        tformList{i} = tform; % Store transformation matrix
         
-        if isempty(registeredColor)
-            continue;
+        if isempty(registeredColor) % If registration failed
+            continue; % Skip this image
         end
     
         % Store the registered color image
-        registeredColorImages{i} = registeredColor;
-        validImageIndices = [validImageIndices, i];
+        registeredColorImages{i} = registeredColor; % Store successful registration
+        validImageIndices = [validImageIndices, i]; % Add to valid list
     end
-    tEnd = toc(tStart);
-    disp(tEnd);
+
+    tEnd = toc(tStart); % Stop timing
+    disp(tEnd); % Display total processing time
 
 end
 
 %% --- Enhanced preprocessing ---
-function grayImage = preprocessImage(img)
+function grayImage = preprocessImage(img, scene)
+    
+    if size(img, 3) == 3 % Check if image has 3 channels (RGB)
+        img = rgb2gray(img); % Convert RGB to grayscale
+    end
+    
+    if strcmp(scene, 'city') % only apply mask when scene is city
+        img = applyEntropyMask(img); % Apply same entropy-based mask to enhance features
+    end
+    
+    img = im2double(img); % Convert to double precision for processing
 
-    % In Graustufen umwandeln, falls RGB
-    if size(img, 3) == 3
-        img = rgb2gray(img);
+    img = imbilatfilt(img); % Apply bilateral filter for noise reduction while preserving edges
+
+    if strcmp(scene, 'nature') % only equalize when scene is nature
+        img = adapthisteq(img, 'ClipLimit', 0.01, 'NumTiles', [6 6]); % Adaptive histogram equalization
     end
 
-    % --- Entropie-Maske berechnen und anwenden ---
-    maskedImage = applyEntropyMask(img);  % Original + bearbeitetes Graubild
-    
-    img = im2double(img);
+    img = mat2gray(img); % Normalize image to [0,1] range
 
-    % Rauschreduzierung
-    img = imbilatfilt(img);
-
-    % Histogramm-Anpassung
-    img = adapthisteq(img, 'ClipLimit', 0.01, 'NumTiles', [6 6]);
-
-    % Normalisierung
-    img = mat2gray(img);
-
-    grayImage = maskedImage;
+    grayImage = img; % Return processed image
 end
 
 %% Create Mask
 function maskedImage = applyEntropyMask(grayImg)
-    % --- Entropiekarte berechnen ---
-    entropyMap = entropyfilt(grayImg);
-    entropyNorm = mat2gray(entropyMap);
+    entropyMap = entropyfilt(grayImg); % Calculate local entropy for each pixel
+    entropyNorm = mat2gray(entropyMap); % Normalize entropy map to [0,1]
 
-    % --- Binarisierung mit Otsu-Schwellenwert ---
-    threshold = graythresh(entropyNorm);
-    entropyMask = entropyNorm > threshold;
+    threshold = graythresh(entropyNorm); % Calculate optimal threshold using Otsu's method
+    entropyMask = entropyNorm > threshold; % Create binary mask of high-entropy regions
 
-    % --- Maske vergrößern (z. B. um kleine Lücken zu schließen) ---
-    se = strel('disk', 5);
-    dilatedMask = imdilate(entropyMask, se);
+    se = strel('disk', 5); % Create disk-shaped structuring element
+    dilatedMask = imdilate(entropyMask, se); % Dilate mask to fill small gaps
 
-    % --- Sicherstellen, dass die Maske 2D ist ---
-    if ndims(dilatedMask) > 2
-        dilatedMask = dilatedMask(:,:,1);
+    if ndims(dilatedMask) > 2 % Check if mask has more than 2 dimensions
+        dilatedMask = dilatedMask(:,:,1); % Take only first channel
     end
 
-    % --- Maske auf Originalbild anwenden ---
-    if size(grayImg, 3) == 3
-        % Farbige Bilder (RGB)
-        maskedImage = zeros(size(grayImg), 'like', grayImg);
-        for c = 1:3
-            maskedImage(:,:,c) = grayImg(:,:,c) .* cast(dilatedMask, 'like', grayImg);
+    if size(grayImg, 3) == 3 % Check if input is color image
+        maskedImage = zeros(size(grayImg), 'like', grayImg); % Initialize output with same type as input
+        for c = 1:3 % Process each color channel
+            maskedImage(:,:,c) = grayImg(:,:,c) .* cast(dilatedMask, 'like', grayImg); % Apply mask to each channel
         end
     else
-        % Graustufenbilder
-        maskedImage = grayImg .* cast(dilatedMask, 'like', grayImg);
+        maskedImage = grayImg .* cast(dilatedMask, 'like', grayImg); % Apply mask to grayscale image
     end
 end
 
 %% --- Find optimal reference image based on feature matching success ---
-function optimalIdx = findOptimalReference(preprocessedImages)
-    numImages = length(preprocessedImages);
+function optimalIdx = findOptimalReference(preprocessedImages, scene)
+    numImages = length(preprocessedImages); % Get total number of images
     
     % For large datasets, sample a subset for efficiency
-    if numImages > 20
-        sampleIndices = round(linspace(1, numImages, min(15, numImages)));
+    if numImages > 20 % If dataset is large
+        sampleIndices = round(linspace(1, numImages, min(15, numImages))); % Sample up to 15 images
         fprintf('Sampling %d images for reference selection\n', length(sampleIndices));
     else
-        sampleIndices = 1:numImages;
+        sampleIndices = 1:numImages; % Use all images if dataset is small
     end
     
     % Use cached preprocessed images
-    images = cell(length(sampleIndices), 1);
+    images = cell(length(sampleIndices), 1); % Create cell array for sampled images
     for i = 1:length(sampleIndices)
-        idx = sampleIndices(i);
-        images{i} = preprocessedImages{idx};
+        idx = sampleIndices(i); % Get original image index
+        images{i} = preprocessedImages{idx}; % Copy preprocessed image to samples
     end
     
     % Calculate pairwise registration success matrix
-    successMatrix = zeros(length(sampleIndices), length(sampleIndices));
-    featureCountMatrix = zeros(length(sampleIndices), length(sampleIndices));
+    successMatrix = zeros(length(sampleIndices), length(sampleIndices)); % Track registration success between image pairs
+    featureCountMatrix = zeros(length(sampleIndices), length(sampleIndices)); % Track feature counts between image pairs
     
     for i = 1:length(sampleIndices)
-        for j = i+1:length(sampleIndices)
-            [success, featureCount] = testRegistration(images{i}, images{j});
-            successMatrix(i, j) = success;
-            successMatrix(j, i) = success;
-            featureCountMatrix(i, j) = featureCount;
-            featureCountMatrix(j, i) = featureCount;
+        for j = i+1:length(sampleIndices) % Only test upper triangle (symmetric matrix)
+            [success, featureCount] = testRegistration(images{i}, images{j}, scene); % Test registration between image pair
+            successMatrix(i, j) = success; % Store success result
+            successMatrix(j, i) = success; % Mirror to lower triangle
+            featureCountMatrix(i, j) = featureCount; % Store feature count
+            featureCountMatrix(j, i) = featureCount; % Mirror to lower triangle
         end
     end
     
     % Calculate reference quality scores
-    referenceScores = zeros(length(sampleIndices), 1);
+    referenceScores = zeros(length(sampleIndices), 1); % Initialize scores for each candidate reference
     
     for i = 1:length(sampleIndices)
         % Success rate as reference
-        successRate = mean(successMatrix(i, :));
+        successRate = mean(successMatrix(i, :)); % Average success rate when this image is used as reference
         
         % Average feature count when used as reference
-        avgFeatureCount = mean(featureCountMatrix(i, :));
+        avgFeatureCount = mean(featureCountMatrix(i, :)); % Average number of features matched
         
         % Bonus for images in the middle of the time series
-        temporalPosition = sampleIndices(i) / numImages;
-        temporalBonus = 1 - abs(temporalPosition - 0.5); % Peak at 0.5
+        temporalPosition = sampleIndices(i) / numImages; % Normalize position in sequence
+        temporalBonus = 1 - abs(temporalPosition - 0.5); % Peak at 0.5 (middle of sequence)
         
         % Combined score
-        referenceScores(i) = successRate * 0.6 + ...
-                           (avgFeatureCount / 100) * 0.3 + ...
-                           temporalBonus * 0.1;
+        referenceScores(i) = successRate * 0.6 + ... % Weight success rate highest
+                           (avgFeatureCount / 100) * 0.3 + ... % Weight feature count
+                           temporalBonus * 0.1; % Small bonus for temporal position
     end
     
     % Select the best reference
-    [~, bestIdx] = max(referenceScores);
-    optimalIdx = sampleIndices(bestIdx);
+    [~, bestIdx] = max(referenceScores); % Find index of highest scoring reference
+    optimalIdx = sampleIndices(bestIdx); % Convert back to original image index
 end
 
 %% --- Test registration between two images ---
-function [success, featureCount] = testRegistration(gray1, gray2)
-    success = 0;
-    featureCount = 0;
+function [success, featureCount] = testRegistration(gray1, gray2, scene)
+    success = 0; % Initialize success flag
+    featureCount = 0; % Initialize feature count
     
     try
         % Crop images to remove scale/logo area
-        cropRatio = 0.07;
-        gray1Cropped = cropImageForFeatureDetection(gray1, cropRatio);
-        gray2Cropped = cropImageForFeatureDetection(gray2, cropRatio);
+        cropRatio = 0.07; % Remove bottom 7% of image
+        gray1Cropped = cropImageForFeatureDetection(gray1, cropRatio); % Crop first image
+        gray2Cropped = cropImageForFeatureDetection(gray2, cropRatio); % Crop second image
 
         % Quick feature detection and matching
-        [matched1, matched2] = adaptiveFeatureDetection(gray1Cropped, gray2Cropped);
+        [matched1, matched2] = adaptiveFeatureDetection(gray1Cropped, gray2Cropped, scene); % Find matching features
 
-        [~, inlierIdx] = estgeotform2d(matched2, matched1, 'similarity', ...
-                'MaxNumTrials', 300, 'Confidence', 90, 'MaxDistance', 5.0);
+        [~, inlierIdx] = estgeotform2d(matched2, matched1, 'similarity', ... % Estimate transformation
+                'MaxNumTrials', 300, 'Confidence', 90, 'MaxDistance', 5.0); % Using RANSAC
             
-        featureCount = sum(inlierIdx);
+        featureCount = sum(inlierIdx); % Count inlier features
 
-        if featureCount >= 4
-            success = 1;
+        if featureCount >= 4 % If enough good matches found
+            success = 1; % Mark as successful
         end
         
     catch
         % Registration failed
-        success = 0;
+        success = 0; % Mark as failed
     end
 end
 
@@ -201,52 +194,52 @@ end
 function croppedImage = cropImageForFeatureDetection(image, cropRatio)
     % Crop the bottom portion of the image to remove scale/logo
     % cropRatio: fraction to remove from bottom (e.g., 0.1 = remove bottom 10%)
-    if nargin < 2
+    if nargin < 2 % If crop ratio not provided
         cropRatio = 0.07; % Default: remove bottom 7%
     end
     
-    [height, ~, ~] = size(image);
-    cropHeight = round(height * (1 - cropRatio));
+    [height, ~, ~] = size(image); % Get image dimensions
+    cropHeight = round(height * (1 - cropRatio)); % Calculate height after cropping
     
-    if length(size(image)) == 3
-        croppedImage = image(1:cropHeight, :, :);
+    if length(size(image)) == 3 % If image has 3 dimensions (color)
+        croppedImage = image(1:cropHeight, :, :); % Crop all channels
     else
-        croppedImage = image(1:cropHeight, :);
+        croppedImage = image(1:cropHeight, :); % Crop grayscale image
     end
 end
 
 %% --- Enhanced registration function with comprehensive debug output ---
-function [registeredColor, tform] = registerImages(gray1, gray2, colorImg2)
+function [registeredColor, tform] = registerImages(gray1, gray2, colorImg2, scene)
     registeredColor = []; % Initialize output
-    tform = [];
+    tform = []; % Initialize transformation matrix
     
     try
         % Crop images for feature detection
         cropRatio = 0.07; % Remove bottom 7% of image
-        gray1Cropped = cropImageForFeatureDetection(gray1, cropRatio);
-        gray2Cropped = cropImageForFeatureDetection(gray2, cropRatio);
+        gray1Cropped = cropImageForFeatureDetection(gray1, cropRatio); % Crop reference image
+        gray2Cropped = cropImageForFeatureDetection(gray2, cropRatio); % Crop target image
 
         % feature detection with adaptive approach
-        [matched1, matched2] = adaptiveFeatureDetection(gray1Cropped, gray2Cropped);
+        [matched1, matched2] = adaptiveFeatureDetection(gray1Cropped, gray2Cropped, scene); % Find matching features
 
-        if size(matched1, 1) < 4
-            registeredColor = [];
+        if size(matched1, 1) < 4 % If insufficient matches found
+            registeredColor = []; % Return empty result
             return;
         end
 
-        MaxDistance_list = [1.5, 5, 10, 50, 100, 500];
-        Confidence = [90, 90, 90, 93, 95, 97];
-        inlierCount = 0;
-        i = 1;
+        MaxDistance_list = [1.5, 5, 10, 50, 100, 500]; % List of distance thresholds to try
+        Confidence = [90, 90, 90, 93, 95, 97]; % List of confidence levels (not used)
+        inlierCount = 0; % Initialize inlier counter
+        i = 1; % Initialize attempt counter
         
-        while inlierCount < 5 && i <= length(Confidence)
+        while inlierCount < 5 && i <= length(MaxDistance_list) % Try different distance thresholds
             % Robust transformation estimation
-            [tform, inlierIdx] = estgeotform2d(matched2, matched1, 'similarity', ...
-                'MaxNumTrials', 3000, 'Confidence', 93, 'MaxDistance', MaxDistance_list(i));
+            [tform, inlierIdx] = estgeotform2d(matched2, matched1, 'similarity', ... % Estimate similarity transformation
+                'MaxNumTrials', 3000, 'Confidence', 93, 'MaxDistance', MaxDistance_list(i)); % Using RANSAC
             
-            inlierCount = sum(inlierIdx);
+            inlierCount = sum(inlierIdx); % Count inlier matches
         
-            i = i + 1;
+            i = i + 1; % Move to next distance threshold
         end
         
         % % safety check based on resulting image size
@@ -264,149 +257,126 @@ function [registeredColor, tform] = registerImages(gray1, gray2, colorImg2)
         %     return
         % end
 
-        if inlierCount < 2
-            registeredColor = [];
+        if inlierCount < 2 % If too few inliers
+            registeredColor = []; % Return empty result
             return;
         end
 
         % Apply transformation to color image if provided
-        outputRef = imref2d(size(gray1));
-        if ~isempty(colorImg2)
-            if size(colorImg2, 3) == 3
+        outputRef = imref2d(size(gray1)); % Create reference coordinate system
+        if ~isempty(colorImg2) % If color image provided
+            if size(colorImg2, 3) == 3 % If RGB image
                 % Register each color channel separately
-                registeredColor = zeros([size(gray1), 3], 'like', colorImg2);
-                for ch = 1:3
-                    registeredColor(:,:,ch) = imwarp(colorImg2(:,:,ch), tform, ...
-                        'OutputView', outputRef, 'Interp', 'linear', 'FillValues', 0);
+                registeredColor = zeros([size(gray1), 3], 'like', colorImg2); % Initialize output
+                for ch = 1:3 % Process each color channel
+                    registeredColor(:,:,ch) = imwarp(colorImg2(:,:,ch), tform, ... % Apply transformation
+                        'OutputView', outputRef, 'Interp', 'linear', 'FillValues', 0); % With linear interpolation
                 end
             else
                 % Single channel color image
-                registeredColor = imwarp(colorImg2, tform, 'OutputView', outputRef, ...
-                    'Interp', 'linear', 'FillValues', 0);
+                registeredColor = imwarp(colorImg2, tform, 'OutputView', outputRef, ... % Apply transformation
+                    'Interp', 'linear', 'FillValues', 0); % With linear interpolation
             end
         end
     catch ME
-        warning('Register images: %s', ME.message);
-        registeredColor = [];
+        warning('Register images: %s', ME.message); % Display error message
+        registeredColor = []; % Return empty result
     end
 end
 
 %% --- Robust feature detection with error handling ---
-function [matched1, matched2] = adaptiveFeatureDetection(gray1Cropped, gray2Cropped)
+function [matched1, matched2] = adaptiveFeatureDetection(gray1Cropped, gray2Cropped, sceneType)
     % Initialize outputs
-    matched1 = [];
-    matched2 = [];
-    
-    % Analyze scene content to determine optimal parameters
-    sceneType1 = 'nature';
-    sceneType2 = 'nature';
-    
-    % Use the more challenging scene type for parameter selection
-    if strcmp(sceneType1, 'water') || strcmp(sceneType2, 'water')
-        sceneType = 'water';
-    elseif strcmp(sceneType1, 'nature') || strcmp(sceneType2, 'nature')
-        sceneType = 'nature';
-    else
-        sceneType = 'city';
-    end
+    matched1 = []; % Initialize matched points from first image
+    matched2 = []; % Initialize matched points from second image
     
     % Get adaptive parameters with validation
-    [surfParams, cornerParams] = getSceneParametersWithCorners(sceneType);
+    [surfParams, cornerParams] = getSceneParametersWithCorners(sceneType); % Get parameters for scene type
     
     % SURF detection with integral image optimization
-    integral1 = integralImage(gray1Cropped);
-    integral2 = integralImage(gray2Cropped);
+    integral1 = integralImage(gray1Cropped); % Compute integral image for first image
+    integral2 = integralImage(gray2Cropped); % Compute integral image for second image
 
-    pts1SURF = detectSURFFeatures(gray1Cropped, ...
-        'MetricThreshold', surfParams.threshold, ...
-        'NumOctaves', surfParams.octaves);
-    pts2SURF = detectSURFFeatures(gray2Cropped, ...
-        'MetricThreshold', surfParams.threshold, ...
-        'NumOctaves', surfParams.octaves);
+    pts1SURF = detectSURFFeatures(gray1Cropped, ... % Detect SURF features in first image
+        'MetricThreshold', surfParams.threshold, ... % Using adaptive threshold
+        'NumOctaves', surfParams.octaves); % Using adaptive octaves
+    pts2SURF = detectSURFFeatures(gray2Cropped, ... % Detect SURF features in second image
+        'MetricThreshold', surfParams.threshold, ... % Using adaptive threshold
+        'NumOctaves', surfParams.octaves); % Using adaptive octaves
     
-    pts1Corner = detectHarrisFeatures(gray1Cropped, ...
-        'MinQuality', cornerParams.cornerQuality, ...
-        'FilterSize', cornerParams.cornerFilterSize);
-    pts2Corner = detectHarrisFeatures(gray2Cropped, ...
-        'MinQuality', cornerParams.cornerQuality, ...
-        'FilterSize', cornerParams.cornerFilterSize);
+    pts1Corner = detectHarrisFeatures(gray1Cropped, ... % Detect corner features in first image
+        'MinQuality', cornerParams.cornerQuality, ... % Using adaptive quality threshold
+        'FilterSize', cornerParams.cornerFilterSize); % Using adaptive filter size
+    pts2Corner = detectHarrisFeatures(gray2Cropped, ... % Detect corner features in second image
+        'MinQuality', cornerParams.cornerQuality, ... % Using adaptive quality threshold
+        'FilterSize', cornerParams.cornerFilterSize); % Using adaptive filter size
 
 
     % Extract features from all methods
-    [f1SURF, vpts1SURF] = extractFeatures(gray1Cropped, pts1SURF);
-    [f2SURF, vpts2SURF] = extractFeatures(gray2Cropped, pts2SURF);
+    [f1SURF, vpts1SURF] = extractFeatures(gray1Cropped, pts1SURF); % Extract SURF descriptors from first image
+    [f2SURF, vpts2SURF] = extractFeatures(gray2Cropped, pts2SURF); % Extract SURF descriptors from second image
 
-    [f1Corner, vpts1Corner] = extractFeatures(gray1Cropped, pts1Corner);
-    [f2Corner, vpts2Corner] = extractFeatures(gray2Cropped, pts2Corner);
+    [f1Corner, vpts1Corner] = extractFeatures(gray1Cropped, pts1Corner); % Extract corner descriptors from first image
+    [f2Corner, vpts2Corner] = extractFeatures(gray2Cropped, pts2Corner); % Extract corner descriptors from second image
 
     % Match features from each method
-    indexPairsSURF = matchFeatures(f1SURF, f2SURF, ...
-        'Unique', true, 'MaxRatio', surfParams.maxRatio);
+    indexPairsSURF = matchFeatures(f1SURF, f2SURF, ... % Match SURF features
+        'Unique', true, 'MaxRatio', surfParams.maxRatio); % Using adaptive ratio threshold
     
-    indexPairsCorner = matchFeatures(f1Corner, f2Corner, ...
-        'Unique', true, 'MaxRatio', cornerParams.maxRatio);
+    indexPairsCorner = matchFeatures(f1Corner, f2Corner, ... % Match corner features
+        'Unique', true, 'MaxRatio', cornerParams.maxRatio); % Using adaptive ratio threshold
 
     % Combine matches from all methods
-    if ~isempty(indexPairsSURF)
-        matched1 = [matched1; vpts1SURF(indexPairsSURF(:,1)).Location];
-        matched2 = [matched2; vpts2SURF(indexPairsSURF(:,2)).Location];
+    if ~isempty(indexPairsSURF) % If SURF matches found
+        matched1 = [matched1; vpts1SURF(indexPairsSURF(:,1)).Location]; % Add SURF matches from first image
+        matched2 = [matched2; vpts2SURF(indexPairsSURF(:,2)).Location]; % Add SURF matches from second image
     end
     
-    if ~isempty(indexPairsCorner)
-        matched1 = [matched1; vpts1Corner(indexPairsCorner(:,1)).Location];
-        matched2 = [matched2; vpts2Corner(indexPairsCorner(:,2)).Location];
+    if ~isempty(indexPairsCorner) % If corner matches found
+        matched1 = [matched1; vpts1Corner(indexPairsCorner(:,1)).Location]; % Add corner matches from first image
+        matched2 = [matched2; vpts2Corner(indexPairsCorner(:,2)).Location]; % Add corner matches from second image
     end
 end
 
 %% --- Fixed parameter function with odd FilterSize values ---
 function [surfParams, cornerParams] = getSceneParametersWithCorners(sceneType)
     % Get SURF parameters
-    surfParams = struct();
+    surfParams = struct(); % Initialize SURF parameters structure
     
     % Get corner detection parameters
-    cornerParams = struct();
+    cornerParams = struct(); % Initialize corner parameters structure
     
-    switch lower(sceneType)
+    switch lower(sceneType) % Switch based on scene type
         case 'city'
             % SURF parameters for city scenes
-            surfParams.threshold = 800;
-            surfParams.octaves = 4;
-            surfParams.maxRatio = 0.7;
+            surfParams.threshold = 800; % High threshold for strong features
+            surfParams.octaves = 4; % Standard number of octaves
+            surfParams.maxRatio = 0.7; % Conservative matching ratio
             
             % Corner parameters for city scenes (good for buildings)
-            cornerParams.cornerQuality = 0.015;
-            cornerParams.cornerFilterSize = 5;
-            cornerParams.maxRatio = 0.7;
-            
-        case 'water'
-            % SURF parameters for water scenes
-            surfParams.threshold = 300;
-            surfParams.octaves = 5;
-            surfParams.maxRatio = 0.8;
-            
-            % Corner parameters for water scenes (more sensitive)
-            cornerParams.cornerQuality = 0.001;
-            cornerParams.cornerFilterSize = 1;
-            cornerParams.maxRatio = 0.8;
+            cornerParams.cornerQuality = 0.015; % High quality threshold
+            cornerParams.cornerFilterSize = 5; % Standard filter size
+            cornerParams.maxRatio = 0.7; % Conservative matching ratio
             
         case 'nature'
             % SURF parameters for nature scenes
-            surfParams.threshold = 500;
-            surfParams.octaves = 4;
-            surfParams.maxRatio = 0.75;
+            surfParams.threshold = 500; % Medium threshold
+            surfParams.octaves = 4; % Standard number of octaves
+            surfParams.maxRatio = 0.75; % Balanced matching ratio
             
             % Corner parameters for nature scenes (balanced)
-            cornerParams.cornerQuality = 0.005;
-            cornerParams.cornerFilterSize = 3;
-            cornerParams.maxRatio = 0.75;
+            cornerParams.cornerQuality = 0.005; % Medium quality threshold
+            cornerParams.cornerFilterSize = 3; % Small filter size
+            cornerParams.maxRatio = 0.75; % Balanced matching ratio
             
         otherwise
             % Default parameters
-            surfParams.threshold = 600;
-            surfParams.octaves = 4;
-            surfParams.maxRatio = 0.7;
+            surfParams.threshold = 400; % Default threshold
+            surfParams.octaves = 3; % Default octaves
+            surfParams.maxRatio = 0.9; % Default matching ratio
             
-            cornerParams.cornerQuality = 0.015;
-            cornerParams.cornerFilterSize = 5; 
+            cornerParams.cornerQuality = 0.015; % Default quality threshold
+            cornerParams.cornerFilterSize = 5; % Default filter size
+            cornerParams.maxRatio = 0.9;
     end
 end
