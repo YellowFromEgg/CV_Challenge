@@ -49,9 +49,83 @@ function [registeredColorImages, validImageIndices, refIdx, tformList] = Registe
         validImageIndices = [validImageIndices, i]; % Add to valid list
     end
 
+    % **NEW: Apply common content mask to all registered images**
+    for i = 1:numImages
+        registeredColorImages{i} = im2double(registeredColorImages{i});
+    end
+    registeredColorImages = applyCommonContentMask(registeredColorImages, validImageIndices);
+
     tEnd = toc(tStart); % Stop timing
     disp(tEnd); % Display total processing time
 
+end
+
+% **NEW FUNCTION: Apply mask to keep only common content**
+function maskedImages = applyCommonContentMask(registeredImages, validIndices)
+    if isempty(validIndices) || length(validIndices) < 2
+        maskedImages = registeredImages;
+        return;
+    end
+    
+    % Get dimensions from first valid image
+    firstValidIdx = validIndices(1);
+    [h, w, channels] = size(registeredImages{firstValidIdx});
+    
+    % Initialize common content mask (start with all pixels as valid)
+    commonMask = true(h, w);
+    
+    % For each valid registered image, find areas with actual content
+    for i = 1:length(validIndices)
+        idx = validIndices(i);
+        img = registeredImages{idx};
+        
+        if isempty(img)
+            continue;
+        end
+        
+        % Create mask for valid pixels (not black/empty)
+        if size(img, 3) == 3
+            % RGB: pixel is valid if any channel > 0
+            validPixelMask = any(img > 0, 3);
+        else
+            % Grayscale: pixel is valid if > 0
+            validPixelMask = img > 0;
+        end
+        
+        % Keep only areas that are valid in ALL images
+        commonMask = commonMask & validPixelMask;
+    end
+    
+    % Apply common mask to all registered images
+    maskedImages = registeredImages;
+    
+    for i = 1:length(validIndices)
+        idx = validIndices(i);
+        img = registeredImages{idx};
+        
+        if isempty(img)
+            continue;
+        end
+        
+        % Apply mask to image
+        if size(img, 3) == 3
+            % RGB image
+            for c = 1:3
+                channel = img(:,:,c);
+                channel(~commonMask) = 0; % Set non-common areas to black
+                img(:,:,c) = channel;
+            end
+        else
+            % Grayscale image
+            img(~commonMask) = 0; % Set non-common areas to black
+        end
+        
+        maskedImages{idx} = img;
+    end
+    
+    % Calculate and display statistics
+    commonPercent = sum(commonMask(:)) / numel(commonMask) * 100;
+    fprintf('Common content area: %.1f%% of total image area\n', commonPercent);
 end
 
 %% --- Enhanced preprocessing ---
