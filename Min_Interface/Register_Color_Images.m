@@ -54,13 +54,15 @@ function [registeredColorImages, validImageIndices, refIdx, tformList] = Registe
         registeredColorImages{i} = im2double(registeredColorImages{i});
     end
     registeredColorImages = applyCommonContentMask(registeredColorImages, validImageIndices);
+    
+    registeredColorImages = matchBrightnessAcrossImages(registeredColorImages);
 
     tEnd = toc(tStart); % Stop timing
     disp(tEnd); % Display total processing time
 
 end
 
-% **NEW FUNCTION: Apply mask to keep only common content**
+%% -- Apply mask to keep only common content --∂å
 function maskedImages = applyCommonContentMask(registeredImages, validIndices)
     if isempty(validIndices) || length(validIndices) < 2
         maskedImages = registeredImages;
@@ -151,6 +153,29 @@ function grayImage = preprocessImage(img, scene)
 
     grayImage = img; % Return processed image
 end
+
+function matchedImages = matchBrightnessAcrossImages(colorImages)
+    numImages = numel(colorImages);
+    matchedImages = cell(size(colorImages));
+
+    % Convert all to HSV
+    hsvImages = cell(size(colorImages));
+    for i = 1:numImages
+        hsvImages{i} = rgb2hsv(colorImages{i});
+    end
+
+    % Choose a reference (e.g., middle image)
+    refIdx = round(numImages / 2);
+    refV = hsvImages{refIdx}(:,:,3);  % Reference brightness channel
+
+    % Apply histogram matching
+    for i = 1:numImages
+        hsv = hsvImages{i};
+        hsv(:,:,3) = imhistmatch(hsv(:,:,3), refV);  % Match brightness
+        matchedImages{i} = hsv2rgb(hsv);             % Convert back to RGB
+    end
+end
+
 
 %% Create Mask
 function maskedImage = applyEntropyMask(grayImg)
