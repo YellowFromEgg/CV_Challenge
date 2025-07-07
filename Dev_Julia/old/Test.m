@@ -1,6 +1,6 @@
 %bilderOrdner = "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Dubai"
 bilderOrdner = "C:/Users/julia/OneDrive/Dokumente/1_TUM/Computer Vision/Challenge/CV_Challenge/Datasets/Dubai"; 
-bilderOrdner = "C:/Users/julia/OneDrive/Dokumente/1_TUM/Computer Vision/Challenge/CV_Challenge/Datasets/Columbia Glacier"; 
+bilderOrdner = "C:/Users/julia/OneDrive/Dokumente/1_TUM/Computer Vision/Challenge/CV_Challenge/Datasets/Brazilian Rainforest"; 
 bilderOrdner = "C:/Users/julia/OneDrive/Dokumente/1_TUM/Computer Vision/Challenge/CV_Challenge/Datasets/Wiesn"; 
 schwelle = 0.2;
 
@@ -19,6 +19,8 @@ detect_high_edge_regions_sharper(heatmapNorm, heatmapthreshold, connectingPixels
 
 edgeDensityThreshold = 0.15;
 connectingPixels = 2;
+
+heatmapNorm = heatmapNorm(heatmapNorm > 0.03);
 
 detect_high_edge_regions(heatmapNorm,edgeDensityThreshold,connectingPixels)
 

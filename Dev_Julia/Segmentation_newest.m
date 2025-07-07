@@ -1,45 +1,133 @@
-function segmentedMaps = segment_loaded_images(loaded_images)
-% Accepts a cell array of loaded RGB images and returns their segmented label maps.
 
-    numImages = length(loaded_images);
-    segmentedMaps = cell(1, numImages);
+imgPaths1 = {
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Columbia Glacier\12_2000.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Columbia Glacier\12_2002.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Columbia Glacier\12_2004.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Columbia Glacier\12_2014.jpg"
+};
+imgPaths1 = {
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Dubai\12_1990.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Dubai\12_1995.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Dubai\12_2000.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Dubai\12_1995.jpg"
+};
+imgPaths = {
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Kuwait\2_2015.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Kuwait\2_2017.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Kuwait\5_2017.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Kuwait\6_2018.jpg"
+};
+imgPaths1 = {
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_1985.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_1990.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_1995.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_2000.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_2005.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_2010.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_2015.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Brazilian Rainforest\12_2020.jpg"
+};
+imgPaths1 = {
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2012_08.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2015_07.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2015_08.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2016_07.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2017_04.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2018_04.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2019_03.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2019_06.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2020_03.jpg"
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Frauenkirche\2021_06.jpg"
 
-    for i = 1:numImages
-        segmentedMaps{i} = segment_environment(loaded_images{i});
-    end
+    "C:\Users\julia\OneDrive\Dokumente\1_TUM\Computer Vision\Challenge\CV_Challenge\Datasets\Wiesn\3_2020.jpg"
+};
+
+for i = 1:length(imgPaths)
+    r=i
+    segment_environment(imgPaths{i});
 end
 
-function finalLabelMap = segment_environment(I)
-% Processes a single RGB image and returns the labeled segmentation map.
-
+function segment_environment(imgPath)
+    % Read image once
+    I = imread(imgPath);
     gray = rgb2gray(I);
     Ihsv = rgb2hsv(I);
     I_double = im2double(I);
     R = I_double(:,:,1); G = I_double(:,:,2); B = I_double(:,:,3);
     H = Ihsv(:,:,1); S = Ihsv(:,:,2); V = Ihsv(:,:,3);
 
-    % --- Step 1: Detection modules ---
+    % --- Step 1: Detection modules (pass precomputed data) ---
     labelSnowWater = detection_Snow_Water(I, gray, R, G, B);  
-    labelSnowWater = detect_water(labelSnowWater, H, S, V, R, G, B); 
-    labelCityLand  = detect_city_land(I, H, S, V, R, G, B);  
-    labelCityLand  = detect_forest(labelCityLand, H, S, V, R, G, B);  
+    labelSnowWater = detect_water(labelSnowWater, H, S, V, R, G, B); % find dark greenish waters as well
+    labelCityLand  = detect_city_land(I, H, S, V, R, G, B);  % no forest here
+    labelCityLand  = detect_forest(labelCityLand, H, S, V, R, G, B);  % forest added here 
+    
     labelRivers    = detectRivers(I, gray, R, G, B); 
+    
 
-    % --- Step 2: Combine masks ---
+    % --- Step 2: Combine masks (preserve overwrite logic) ---
     finalLabelMap = labelSnowWater;
-    finalLabelMap(labelCityLand == 2) = 2;  
-    finalLabelMap(labelCityLand == 3) = 3;  
-    finalLabelMap(labelCityLand == 7) = 7;  
-    finalLabelMap(labelRivers == 5)    = 5;  
 
-    % --- Step 3: Resolve ambiguous areas ---
+    finalLabelMap(labelCityLand == 2) = 2;  % Land
+    finalLabelMap(labelCityLand == 3) = 3;  % City
+    %finalLabelMap()
+    finalLabelMap(labelCityLand == 7) = 7;  % Forest inside City
+    finalLabelMap(labelRivers == 5) = 5;    % River
+
+    % --- Step 3: Unclassified pixels by color ---
     finalLabelMap = classify_unclassified_by_color(finalLabelMap, R, G, B, H, S, V);
     finalLabelMap = resolve_water_forest_conflict(finalLabelMap, gray, H, S, V, R, G, B);
-
-    % (Optional visualization: remove comment to enable)
-    % show_segmented_map(I, finalLabelMap);
+    % --- Visualization ---
+    show_segmented_map(I, finalLabelMap);
 end
 
+
+function segment_environment_old(imgPath)
+    % Read input image
+    I = imread(imgPath);
+
+    %% Run detection modules
+    %detects Snow, Water based on smoothness; 
+    labelSnowWater = detection_Snow_Water(imgPath);     % 0,1,4
+    %detects city and land based on edge densities
+    labelCityLand  = detect_city_land(I);               % 0,2,3,7 (7 = forest inside city)
+    %detects rivers/roads based on long thin edges
+    labelRivers    = detectRivers(imgPath);             % 0,5
+
+
+    % --- Step 2: Combine layers in correct overwrite order
+    finalLabelMap = labelSnowWater;             % start with water/snow (1,4)
+
+    finalLabelMap(labelCityLand == 2) = 2;      % Land
+    finalLabelMap(labelCityLand == 3) = 3;      % City
+    finalLabelMap(labelCityLand == 7) = 7;      % Forest inside City
+    finalLabelMap(labelSnowWater == 4) = 4; % Snow
+    finalLabelMap(labelRivers == 5) = 5;    % River
+
+    % Fill unclassified using color-based classification
+    finalLabelMap = classify_unclassified_by_color(finalLabelMap, I);
+
+    % Final colormap
+    cmap = [
+        0.8 0.8 0.8;  % 0 - Unclassified (gray) [shouldn't appear]
+        0 0 1;        % 1 - Water (blue)
+        0.6 0.4 0.2;  % 2 - Land (brown)
+        1 0 0;        % 3 - City (red)
+        1 1 1;        % 4 - Snow (white)
+        0 1 1;        % 5 - River (cyan)
+        1 0.9 0.5;    % 6 - Sand (light yellow)
+        0 0.6 0      % 7 - Forest (green)
+    ];
+    classNames = {'Unclassified','Water','Land','Urban/Agriculture','Snow','River/Road','Sand','Forest','Shadow'};
+
+    % Visualization
+    figure('Name', 'Final Segmentation Result', 'Position', [100 100 1400 600]);
+    subplot(1,2,1); imshow(I); title('Original Image');
+    subplot(1,2,2); imagesc(finalLabelMap); axis image off;
+    colormap(gca, cmap); caxis([0 7]);
+    colorbar('Ticks', 0:7, 'TickLabels', classNames);
+    title('Segmented Map');
+end
 
 %% Detection Functions
 
