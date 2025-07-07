@@ -14,6 +14,8 @@ classdef SatelliteImageRegistration < handle
         validIndices           logical % Logical vector of successful registers
         refIdx                 double  % Index of reference frame
         tformList              cell    % Cell array of affine2d objects
+        segmentedMaps          cell    % Segmentation output for each image
+        segmentedOverlapMasks  cell    % Overlap masks after transformation
     end
 
     %% =====             Constructor & high-level API              ===== %%
@@ -36,8 +38,12 @@ classdef SatelliteImageRegistration < handle
         function run(obj)
             %RUN  Convenience wrapper: load → register → display.
             obj.loadImages();
+            obj.segmentImages(); 
             obj.registerImages('city');   % default preset; change as needed
             obj.displayRegisteredImages();
+            obj.applyTransformsToSegmentations();
+            obj.displaySegmentedImages();           
+            obj.displayTransformedSegmentations();  
         end
 
         function selectFolder(obj, folder)
@@ -73,6 +79,14 @@ classdef SatelliteImageRegistration < handle
             end
         end
 
+        function segmentImages(obj)
+            %SEGMENTIMAGES Segment loaded color images using external function
+            if isempty(obj.colorImages)
+                error('No images loaded. Call loadImages() first.');
+            end
+            obj.segmentedMaps = Segmentation(obj.colorImages);
+        end
+
         function registerImages(obj, varargin)
             %REGISTERIMAGES  Wrapper around Register_Color_Images
             %
@@ -90,6 +104,17 @@ classdef SatelliteImageRegistration < handle
                                    obj.colorImages, numImages, varargin{:});
         end
 
+        function applyTransformsToSegmentations(obj)
+            if isempty(obj.segmentedMaps) || isempty(obj.tformList)
+                warning('You must run segmentation and registration first.');
+                return;
+            end
+            refSize = size(obj.segmentedMaps{obj.refIdx}); % Höhe × Breite
+            obj.segmentedOverlapMasks = Transform_Segmented_Images(obj.segmentedMaps, obj.tformList, refSize(1:2));
+        end
+
+
+
         function displayRegisteredImages(obj)
             %DISPLAYREGISTEREDIMAGES  Show results in a tidy grid
             if isempty(obj.registeredColorImages)
@@ -101,6 +126,80 @@ classdef SatelliteImageRegistration < handle
                             obj.imageFiles,            ...
                             obj.refIdx);
         end
+
+        function displaySegmentedImages(obj)
+            %DISPLAYSEGMENTEDIMAGES Displays the original segmented maps
+            if isempty(obj.segmentedMaps)
+                warning('No segmented maps available. Run segmentImages() first.');
+                return;
+            end
+        
+            numImages = numel(obj.segmentedMaps);
+            cols = ceil(sqrt(numImages));
+            rows = ceil(numImages / cols);
+        
+            figure('Name','Original Segmented Images', ...
+                   'NumberTitle','off', ...
+                   'Position',[100, 100, min(1800, cols*300), min(1200, rows*250)]);
+        
+            for i = 1:numImages
+                subplot(rows, cols, i);
+                segImg = obj.segmentedMaps{i};
+        
+                if isempty(segImg)
+                    axis off;
+                    text(0.5, 0.5, 'Segmentation Failed', ...
+                        'HorizontalAlignment','center', ...
+                        'VerticalAlignment','middle', ...
+                        'FontSize',12,'Color','red');
+                else
+                    imshow(label2rgb(segImg));  % Optional: customize colormap
+                    title(sprintf('Segmented %d', i), 'FontSize', 9);
+                end
+        
+                axis off;
+            end
+        
+            sgtitle('Segmented Images (Original)', 'FontSize', 14, 'FontWeight', 'bold');
+        end
+
+        function displayTransformedSegmentations(obj)
+            %DISPLAYTRANSFORMEDSEGMENTATIONS Displays warped segmented maps
+            if isempty(obj.segmentedOverlapMasks)
+                warning('No transformed segmentations available. Run applyTransformsToSegmentations() first.');
+                return;
+            end
+        
+            numImages = numel(obj.segmentedOverlapMasks);
+            cols = ceil(sqrt(numImages));
+            rows = ceil(numImages / cols);
+        
+            figure('Name','Transformed Segmentations', ...
+                   'NumberTitle','off', ...
+                   'Position',[150, 150, min(1800, cols*300), min(1200, rows*250)]);
+        
+            for i = 1:numImages
+                subplot(rows, cols, i);
+                segImg = obj.segmentedOverlapMasks{i};
+        
+                if isempty(segImg)
+                    axis off;
+                    text(0.5, 0.5, 'Transform Failed', ...
+                        'HorizontalAlignment','center', ...
+                        'VerticalAlignment','middle', ...
+                        'FontSize',12,'Color','red');
+                else
+                    imshow(label2rgb(segImg));
+                    title(sprintf('Warped %d', i), 'FontSize', 9);
+                end
+        
+                axis off;
+            end
+        
+            sgtitle('Transformed Segmented Images', 'FontSize', 14, 'FontWeight', 'bold');
+        end
+
+
     end
 
     %% =====                    House-keeping                     ===== %%
