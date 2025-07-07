@@ -35,6 +35,11 @@ function finalLabelMap = segment_image(I)
     % --- Step 3: Resolve ambiguous areas ---
     finalLabelMap = classify_unclassified_by_color(finalLabelMap, R, G, B, H, S, V);
     finalLabelMap = resolve_water_forest_conflict(finalLabelMap, gray, H, S, V, R, G, B);
+    
+    % Combine Forest/Water
+    finalLabelMap(finalLabelMap == 7)   = 1;
+    % Combine Sand/Land
+    finalLabelMap(finalLabelMap == 6)   = 2;
 
     % (Optional visualization: remove comment to enable)
     % show_segmented_map(I, finalLabelMap);
@@ -45,81 +50,6 @@ end
 
 %% detect_city_land -> returns label map containing 0,2,3
 % new -> 90% city detection
-function [labelMap] = detect_city_land_old(I)
-    % --- Step 1: Preprocessing ---
-    gray = im2double(rgb2gray(I));
-    stdMap = mat2gray(stdfilt(gray, true(15)));
-    baseMask = stdMap > 0.15;
-
-    % --- Step 2: Morphological cleaning and filtering ---
-    cityMask = imfill(imclose(bwareaopen(baseMask, 100), strel('disk', 5)), 'holes');
-
-    CC = bwconncomp(cityMask);
-    props = regionprops(CC, 'PixelIdxList', 'Area');
-    keepIdx = find([props.Area] >= 500);
-
-    % --- HSV & RGB preparation (once) ---
-    Ihsv = rgb2hsv(I);
-    H = Ihsv(:,:,1); S = Ihsv(:,:,2); V = Ihsv(:,:,3);
-    I_norm = im2double(I);
-    R = I_norm(:,:,1); G = I_norm(:,:,2); B = I_norm(:,:,3);
-
-    labelMap = zeros(size(cityMask), 'uint8');  % 0 = background
-
-    % --- Step 3: Classify regions ---
-    for i = 1:length(keepIdx)
-        pix = props(keepIdx(i)).PixelIdxList;
-
-        h = H(pix); s = S(pix); v = V(pix);
-
-        % Precompute only once
-        numPix = numel(pix);
-
-        isRedRoof = (h < 0.05 | h > 0.95) & s > 0.3;
-        isTanLike = h > 0.05 & h < 0.15 & s > 0.2 & v > 0.4;
-        greenish  = h > 0.2 & h < 0.45 & s > 0.25;
-
-        RedSum     = sum(isRedRoof);
-        TanRatio   = sum(isTanLike) / numPix;
-        GreenRatio = sum(greenish) / numPix;
-        MeanSat    = mean(s);
-        MeanVal    = mean(v);
-        VarVal     = std(v);
-
-        label = 2; % Land
-        if RedSum > 28 || GreenRatio > 0.42 || ...
-           (TanRatio > 0.1 && GreenRatio < 0.4 && MeanVal > 0.5)
-            label = 3; % City
-        elseif MeanSat < 0.1 && VarVal < 0.02
-            label = 0; % Background
-        end
-
-        labelMap(pix) = label;
-
-        % --- Global override if >90% is city ---
-        cityRatio = sum(labelMap(:) == 3) / numel(labelMap);
-        if cityRatio > 0.7
-            labelMap(labelMap > 0) = 3;  % All non-background becomes city
-        end
-
-        % Forest detection only if city
-        if label == 3
-            regionR = R(pix); regionG = G(pix); regionB = B(pix);
-            regionH = h; regionS = s; regionV = v;
-
-            isGreenHSV = (regionH > 0.2) & (regionH < 0.45) & ...
-                         regionS > 0.2 & regionV > 0.2;
-            isGreenRGB = regionG > regionR + 0.05 & ...
-                         regionG > regionB + 0.05 & ...
-                         regionG > 0.3;
-
-            forestPixels = isGreenHSV & isGreenRGB;
-            if any(forestPixels)
-                labelMap(pix(forestPixels)) = 7;
-            end
-        end
-    end
-end
 
 function [labelMap] = detect_city_land(I, H, S, V, R, G, B)
     gray = im2double(rgb2gray(I));
@@ -164,9 +94,8 @@ function [labelMap] = detect_city_land(I, H, S, V, R, G, B)
 end
 
 %% detectRivers -> returns label map containing 0,5
-function finalRiverMask = detectRivers_old(imgPath)
-    rgbImg = imread(imgPath);
-    grayImg = rgb2gray(rgbImg);
+function finalRiverMask = detectRivers(rgbImg, grayImg, R, G, B)
+   
     mask = true(size(grayImg));
 
     % Normalize channels
@@ -292,240 +221,7 @@ function finalRiverMask = detectRivers_old(imgPath)
     end
 end
 
-function finalRiverMask = detectRivers1(I, grayImg, R, G, B)
-    imgSize = size(grayImg);
-    greenish = (G > R + 0.03) & (G > B + 0.02) & (G > 0.35);
-    whiteish = (R > 0.7) & (G > 0.7) & (B > 0.7);
-    riverCandidates = bwareaopen((greenish | whiteish), 100);
-    riverMaskColorShape = imclose(riverCandidates, strel('disk', 5));
-
-    CC = bwconncomp(riverMaskColorShape);
-    stats = regionprops(CC, 'PixelIdxList', 'MajorAxisLength', 'MinorAxisLength', 'Area', 'Solidity');
-    filtered = false(imgSize);
-
-    for i = 1:CC.NumObjects
-        major = stats(i).MajorAxisLength;
-        minor = stats(i).MinorAxisLength;
-        if minor == 0, continue; end
-        aspectRatio = major / minor;
-        if aspectRatio > 3 && stats(i).Area < 30000 && stats(i).Solidity < 0.95
-            filtered(stats(i).PixelIdxList) = true;
-        end
-    end
-
-    % Edge-based detection
-    edges = imfill(edge(grayImg, 'Sobel'), 'holes');
-    edges = bwareaopen(imclose(edges, strel('disk', 5)), 100);
-
-    CC_edge = bwconncomp(edges);
-    stats_edge = regionprops(CC_edge, 'PixelIdxList', 'MajorAxisLength', 'MinorAxisLength');
-    filteredEdge = false(imgSize);
-
-    for i = 1:CC_edge.NumObjects
-        minor = stats_edge(i).MinorAxisLength;
-        if minor == 0, continue; end
-        if stats_edge(i).MajorAxisLength / minor > 2
-            filteredEdge(stats_edge(i).PixelIdxList) = true;
-        end
-    end
-
-    combined = filtered | filteredEdge;
-    connected = connectRegionsByEdgeProximity(combined, 10, 2);
-
-    % Final filtering by spatial extent
-    CC = bwconncomp(connected);
-    stats = regionprops(CC, 'PixelIdxList', 'Area');
-    imageDiagonal = norm(imgSize);
-    minDist = imageDiagonal / 6;
-    finalRiverMask = zeros(imgSize);
-
-    for i = 1:CC.NumObjects
-        pix = stats(i).PixelIdxList;
-        if numel(pix) < 100, continue; end
-        [y, x] = ind2sub(imgSize, pix);
-        coords = [x, y];
-        if numel(pix) > 300
-            try
-                K = convhull(coords(:,1), coords(:,2));
-                maxDist = max(pdist(coords(K,:)));
-            catch
-                maxDist = max(pdist(coords));
-            end
-        else
-            maxDist = max(pdist(coords));
-        end
-        if maxDist >= minDist
-            finalRiverMask(pix) = 5;
-        end
-    end
-end
-function finalRiverMask = detectRivers(I, grayImg, R, G, B)
-    % Detect rivers using color, edge shape, and spatial connectivity.
-    % Inputs:
-    %   - I: original RGB image
-    %   - grayImg: grayscale version of I
-    %   - R, G, B: double-normalized RGB channels [0,1]
-
-    imgSize = size(grayImg);
-    mask = true(imgSize);
-
-    % --- Step 1: Color-based River Candidates ---
-    greenish = (G > R + 0.03) & (G > B + 0.02) & (G > 0.35);
-    whiteish = (R > 0.7) & (G > 0.7) & (B > 0.7);
-    riverCandidates = (greenish | whiteish) & mask;
-    riverCandidates = bwareaopen(riverCandidates, 100);
-
-    riverMaskColorShape = imclose(riverCandidates, strel('disk', 5));
-
-    % --- Step 2: Filter Long Thin Shapes ---
-    CC = bwconncomp(riverMaskColorShape);
-    stats = regionprops(CC, 'PixelIdxList', 'MajorAxisLength', 'MinorAxisLength', 'Area', 'Solidity');
-    filteredColor = false(imgSize);
-
-    for i = 1:CC.NumObjects
-        major = stats(i).MajorAxisLength;
-        minor = stats(i).MinorAxisLength;
-        area = stats(i).Area;
-        solidity = stats(i).Solidity;
-
-        if minor == 0, continue; end
-        aspectRatio = major / minor;
-
-        if aspectRatio > 3 && area < 30000 && solidity < 0.95
-            filteredColor(stats(i).PixelIdxList) = true;
-        end
-    end
-
-    % --- Step 3: Edge-based Detection ---
-    edgesSobel = edge(grayImg, 'Sobel');
-    edgesSobel = imfill(edgesSobel, 'holes');
-    edgesSobel = bwareaopen(imclose(edgesSobel, strel('disk', 5)), 100);
-
-    CC_edge = bwconncomp(edgesSobel);
-    statsEdge = regionprops(CC_edge, 'PixelIdxList', 'MajorAxisLength', 'MinorAxisLength');
-    filteredEdge = false(imgSize);
-
-    for i = 1:CC_edge.NumObjects
-        major = statsEdge(i).MajorAxisLength;
-        minor = statsEdge(i).MinorAxisLength;
-        if minor == 0, continue; end
-        if major / minor > 2
-            filteredEdge(statsEdge(i).PixelIdxList) = true;
-        end
-    end
-
-    % --- Step 4: Combine & Connect ---
-    combinedCandidates = filteredColor | filteredEdge;
-
-    maxBridgeDistance = 10;
-    bridgeRadius = 2;
-    connectedEdges = connectRegionsByEdgeProximity(combinedCandidates, maxBridgeDistance, bridgeRadius);
-
-    % --- Step 5: Final River Region Filtering ---
-    CC_final = bwconncomp(connectedEdges);
-    statsFinal = regionprops(CC_final, 'PixelIdxList', 'Area');
-
-    imageDiagonal = sqrt(imgSize(1)^2 + imgSize(2)^2);
-    minDist = (1/6) * imageDiagonal;
-    finalRiverMask = zeros(imgSize);
-
-    for i = 1:CC_final.NumObjects
-        pixIdx = statsFinal(i).PixelIdxList;
-        if numel(pixIdx) < 100, continue; end
-
-        [y, x] = ind2sub(imgSize, pixIdx);
-        coords = [x, y];
-
-        if numel(pixIdx) > 300
-            try
-                K = convhull(coords(:,1), coords(:,2));
-                maxDist = max(pdist(coords(K,:)));
-            catch
-                maxDist = max(pdist(coords));
-            end
-        else
-            maxDist = max(pdist(coords));
-        end
-
-        if maxDist >= minDist
-            finalRiverMask(pixIdx) = 5;
-        end
-    end
-end
-
 %% detection_Snow_Water -> returns label map containing 0,1,4 
-function labelMap = detection_Snow_Water_old(imgPath)
-    % Read image
-    img = imread(imgPath);
-    grayImg = rgb2gray(img);
-
-    % Normalize RGB once
-    imgNorm = im2double(img);
-    Rn = imgNorm(:,:,1);
-    Gn = imgNorm(:,:,2);
-    Bn = imgNorm(:,:,3);
-
-    % --- Step 1: Snow Detection (Region-based) ---
-    edgeDensity = conv2(double(edge(grayImg, 'Canny')), ones(15) / 225, 'same');
-    smoothMask = edgeDensity < 0.05;
-    smoothMask = imfill(smoothMask, 'holes');
-    smoothMask = bwareaopen(smoothMask, 500);
-
-    CC = bwconncomp(smoothMask);
-    stats = regionprops(CC, 'PixelIdxList', 'Area', 'Eccentricity');
-
-    % Remove regions not smooth/large enough
-    for k = 1:numel(stats)
-        if stats(k).Eccentricity < 0.6 || stats(k).Area < 100
-            smoothMask(stats(k).PixelIdxList) = false;
-        end
-    end
-
-    % Recompute connected components once
-    CC = bwconncomp(smoothMask);
-    stats = regionprops(CC, 'PixelIdxList');
-
-    labelMap = zeros(size(grayImg), 'uint8');
-
-    snowFound = false;
-    for k = 1:CC.NumObjects
-        idx = stats(k).PixelIdxList;
-
-        rMean = mean(Rn(idx));
-        gMean = mean(Gn(idx));
-        bMean = mean(Bn(idx));
-
-        if rMean > 0.75 && gMean > 0.75 && bMean > 0.75
-            labelMap(idx) = 4; % Snow
-            snowFound = true;
-        elseif bMean > rMean && bMean > gMean
-            labelMap(idx) = 1; % Water
-        end
-    end
-
-    % --- Step 2: Pixel-wise Water Detection ---
-    blueDominant = (Bn > 0.35) & (Bn > Rn + 0.08) & (Bn > Gn + 0.05);
-    cyanLike = (Bn > 0.4) & (Gn > 0.4) & (Rn < 0.4) & (abs(Bn - Gn) < 0.15);
-    pixelWaterCandidates = blueDominant | cyanLike;
-
-    % Area filtering
-    L = bwlabel(pixelWaterCandidates);
-    statsWater = regionprops(L, 'Area');
-    smallAreas = find([statsWater.Area] < 3000);
-
-    for i = 1:numel(smallAreas)
-        pixelWaterCandidates(L == smallAreas(i)) = false;
-    end
-
-    labelMap(pixelWaterCandidates) = 1;
-
-    % --- Optional Snow Fill ---
-    if snowFound
-        whiteish = (Rn > 0.7) & (Gn > 0.7) & (Bn > 0.7);
-        labelMap(whiteish) = 4;
-    end
-end
-
 function labelMap = detection_Snow_Water(I, grayImg, Rn, Gn, Bn)
     imgSize = size(grayImg);
     edgeDensity = conv2(double(edge(grayImg, 'Canny')), ones(15)/225, 'same');
@@ -670,65 +366,6 @@ end
 
 
 %% detection unclassified
-function labelMap = classify_unclassified_by_color_old(labelMap, rgbImage)
-    % Define class color prototypes (normalized RGB)
-    COLOR_THRESHOLDS = struct( ...
-        'Water',  [0.33, 0.38, 0.42], ...   % Blue-green water
-        'City',   [0.4, 0.4, 0.4], ...
-        'Sand',   [0.85, 0.75, 0.55], ...
-        'Forest', [0.25, 0.40, 0.26] ...   % Dark green forest
-    );
-
-    % Connected components of unclassified regions
-    unclassifiedMask = (labelMap == 0);
-    CC = bwconncomp(unclassifiedMask);
-    stats = regionprops(CC, 'PixelIdxList');
-
-    % Prepare color channels
-    rgbDouble = im2double(rgbImage);
-    R = rgbDouble(:,:,1);
-    G = rgbDouble(:,:,2);
-    B = rgbDouble(:,:,3);
-
-    Ihsv = rgb2hsv(rgbDouble);
-    H = Ihsv(:,:,1); S = Ihsv(:,:,2); V = Ihsv(:,:,3);
-
-    % Iterate through each unclassified region
-    for k = 1:CC.NumObjects
-        idx = stats(k).PixelIdxList;
-
-        % Mean RGB and HSV
-        rMean = mean(R(idx));
-        gMean = mean(G(idx));
-        bMean = mean(B(idx));
-        hMean = mean(H(idx));
-        sMean = mean(S(idx));
-        vMean = mean(V(idx));
-
-        colorVec = [rMean, gMean, bMean];
-        hsvMean = [hMean, sMean, vMean];
-
-        % --- Shortcut rule: if hue is in cyan range, classify as water ---
-        if hsvMean(1) > 0.42
-            labelMap(idx) = 1; % Water
-            continue;
-        end
-
-        % --- Compute distances to prototypes ---
-        dists = [
-            norm(colorVec - COLOR_THRESHOLDS.Water);
-            norm(colorVec - COLOR_THRESHOLDS.City);
-            norm(colorVec - COLOR_THRESHOLDS.Sand);
-            norm(colorVec - COLOR_THRESHOLDS.Forest)
-        ];
-
-        [~, minIdx] = min(dists);
-        labelList = [1, 3, 6, 7];  % Class label codes
-        newLabel = labelList(minIdx);
-
-        labelMap(idx) = newLabel;
-    end
-end
 
 function labelMap = classify_unclassified_by_color(labelMap, R, G, B, H, S, V)
     COLOR_THRESHOLDS = struct( ...
@@ -802,76 +439,6 @@ end
 
 
 %% Helper Functions
-function finalMask = connectRegionsByEdgeProximity2(binaryMask, maxDist, bridgeRadius)
-    % CONNECTREGIONSBYEDGEPROXIMITY connects regions based on closest pixel distance
-    labeled = bwlabel(binaryMask);
-    numRegions = max(labeled(:));
-    finalMask = binaryMask;
-
-    % Get list of all region pixel coordinates
-    regionPixels = cell(numRegions, 1);
-    for i = 1:numRegions
-        [y, x] = find(labeled == i);
-        regionPixels{i} = [x, y];  % [x, y] format
-    end
-
-    % Loop through all unique pairs
-    for i = 1:numRegions
-        for j = i+1:numRegions
-            pts1 = regionPixels{i};
-            pts2 = regionPixels{j};
-
-            % Compute all pairwise distances
-            D = pdist2(pts1, pts2);
-            [minD, idx] = min(D(:));
-
-            if minD <= maxDist
-                [p1, p2] = ind2sub(size(D), idx);
-                pt1 = pts1(p1, :);
-                pt2 = pts2(p2, :);
-
-                % Draw line between pt1 and pt2
-                bridge = false(size(binaryMask));
-                lineIdx = drawLineBetweenPoints(pt1, pt2, size(binaryMask));
-                bridge(lineIdx) = true;
-
-                % Thicken bridge
-                bridge = imdilate(bridge, strel('disk', bridgeRadius));
-                finalMask = finalMask | bridge;
-            end
-        end
-    end
-end
-function finalMask = connectRegionsByEdgeProximity3(binaryMask, maxDist, bridgeRadius)
-    labeled = bwlabel(binaryMask);
-    numRegions = max(labeled(:));
-    finalMask = binaryMask;
-    regionPixels = cell(numRegions, 1);
-
-    for i = 1:numRegions
-        [y, x] = find(labeled == i);
-        regionPixels{i} = [x, y];
-    end
-
-    for i = 1:numRegions
-        for j = i+1:numRegions
-            pts1 = regionPixels{i};
-            pts2 = regionPixels{j};
-            D = pdist2(pts1, pts2);
-            [minD, idx] = min(D(:));
-            if minD <= maxDist
-                [p1, p2] = ind2sub(size(D), idx);
-                pt1 = pts1(p1, :);
-                pt2 = pts2(p2, :);
-
-                bridge = false(size(binaryMask));
-                bridge(drawLineBetweenPoints(pt1, pt2, size(binaryMask))) = true;
-                bridge = imdilate(bridge, strel('disk', bridgeRadius));
-                finalMask = finalMask | bridge;
-            end
-        end
-    end
-end
 function finalMask = connectRegionsByEdgeProximity(binaryMask, maxDist, bridgeRadius)
     % CONNECTREGIONSBYEDGEPROXIMITY connects nearby regions using shortest path bridging,
     % optimized for speed and memory using knnsearch (no full pdist2 matrix).
@@ -922,17 +489,6 @@ function finalMask = connectRegionsByEdgeProximity(binaryMask, maxDist, bridgeRa
     end
 end
 
-function idx = drawLineBetweenPoints2(pt1, pt2, imageSize)
-    % Bresenham-style line drawing
-    x1 = round(pt1(1)); y1 = round(pt1(2));
-    x2 = round(pt2(1)); y2 = round(pt2(2));
-    n = max(abs([x2 - x1, y2 - y1])) + 1;
-    x = round(linspace(x1, x2, n));
-    y = round(linspace(y1, y2, n));
-    x = max(min(x, imageSize(2)), 1);
-    y = max(min(y, imageSize(1)), 1);
-    idx = sub2ind(imageSize, y, x);
-end
 function idx = drawLineBetweenPoints(pt1, pt2, imageSize)
     x1 = round(pt1(1)); y1 = round(pt1(2));
     x2 = round(pt2(1)); y2 = round(pt2(2));

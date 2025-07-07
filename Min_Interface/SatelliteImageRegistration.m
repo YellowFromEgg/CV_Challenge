@@ -143,11 +143,18 @@ classdef SatelliteImageRegistration < handle
         end
 
         function displaySegmentedImages(obj)
-            %DISPLAYSEGMENTEDIMAGES Displays the original segmented maps
+            %DISPLAYSEGMENTEDIMAGES Displays the original segmented maps with custom colormap
             if isempty(obj.segmentedMaps)
                 warning('No segmented maps available. Run segmentImages() first.');
                 return;
             end
+        
+            % Define custom colormap and labels
+            cmap = [
+                0.8 0.8 0.8; 0.2 0.55 0.5; 0.6 0.4 0.2; 1 0 0; 1 1 1;
+                0 1 1
+            ];
+            classNames = {'Unclassified','Water/Forest','Land','Urban/Agriculture','Snow','River/Road'};
         
             numImages = numel(obj.segmentedMaps);
             cols = ceil(sqrt(numImages));
@@ -168,7 +175,7 @@ classdef SatelliteImageRegistration < handle
                         'VerticalAlignment','middle', ...
                         'FontSize',12,'Color','red');
                 else
-                    imshow(label2rgb(segImg));  % Optional: customize colormap
+                    imshow(segImg, cmap);
                     title(sprintf('Segmented %d', i), 'FontSize', 9);
                 end
         
@@ -176,14 +183,28 @@ classdef SatelliteImageRegistration < handle
             end
         
             sgtitle('Segmented Images (Original)', 'FontSize', 14, 'FontWeight', 'bold');
+        
+            % Optional: add color legend
+            colormap(cmap);
+            colorbar('Ticks', 0:numel(classNames)-1, ...
+                     'TickLabels', classNames, ...
+                     'TickLength', 0, 'Direction', 'reverse');
         end
 
+
         function displayTransformedSegmentations(obj)
-            %DISPLAYTRANSFORMEDSEGMENTATIONS Displays warped segmented maps
+            %DISPLAYTRANSFORMEDSEGMENTATIONS Displays warped segmented maps with custom colormap
             if isempty(obj.segmentedOverlapMasks)
                 warning('No transformed segmentations available. Run applyTransformsToSegmentations() first.');
                 return;
             end
+        
+            % Define custom colormap and labels
+            cmap = [
+                0.8 0.8 0.8; 0.2 0.55 0.5; 0.6 0.4 0.2; 1 0 0; 1 1 1;
+                0 1 1
+            ];
+            classNames = {'Unclassified','Water/Forest','Land','Urban/Agriculture','Snow','River/Road'};
         
             numImages = numel(obj.segmentedOverlapMasks);
             cols = ceil(sqrt(numImages));
@@ -204,7 +225,7 @@ classdef SatelliteImageRegistration < handle
                         'VerticalAlignment','middle', ...
                         'FontSize',12,'Color','red');
                 else
-                    imshow(label2rgb(segImg));
+                    imshow(segImg, cmap);
                     title(sprintf('Warped %d', i), 'FontSize', 9);
                 end
         
@@ -212,7 +233,14 @@ classdef SatelliteImageRegistration < handle
             end
         
             sgtitle('Transformed Segmented Images', 'FontSize', 14, 'FontWeight', 'bold');
+        
+            % Optional: add color legend
+            colormap(cmap);
+            colorbar('Ticks', 0:numel(classNames)-1, ...
+                     'TickLabels', classNames, ...
+                     'TickLength', 0, 'Direction', 'reverse');
         end
+
 
 
     end
