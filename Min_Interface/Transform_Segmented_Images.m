@@ -1,44 +1,72 @@
-function transformedSegmented = Transform_Segmented_Images(segmentedMaps, tformList, refSize)
-%TRANSFORM_SEGMENTED_IMAGES Apply affine2d transforms to segmented images.
+function segmentedOverlapMasks = Transform_Segmented_Images(segmentedMaps, tformList, refIdx)
+% TRANSFORM_SEGMENTED_IMAGES Applies affine transforms to segmented images.
+% If a transform is missing, the original image is returned unchanged.
 %
 % Inputs:
-%   segmentedMaps - cell array of segmented images (label maps, RGB, etc.)
-%   tformList     - cell array of affine2d transformations
-%   refSize       - [height, width] size of the reference frame
+%   segmentedMaps - cell array of original segmented images (label maps)
+%   tformList     - cell array of transform objects (affine2d or similitude2d, etc.)
+%   refIdx        - index of reference image to determine output size
 %
 % Output:
-%   transformedSegmented - cell array of transformed segmentation images
+%   segmentedOverlapMasks - cell array of transformed segmented images
 
     numImages = numel(segmentedMaps);
-    transformedSegmented = cell(1, numImages);
-    outputRef = imref2d(refSize); % spatial reference frame
+    segmentedOverlapMasks = cell(1, numImages);
+
+    % Use reference size to build spatial reference
+    refSize = size(segmentedMaps{refIdx});
+    if numel(refSize) == 2
+        refSize(3) = 1;
+    end
+    outputRef = imref2d(refSize(1:2));  % height × width only
 
     for k = 1:numImages
         segImg = segmentedMaps{k};
-        tform = tformList{k};
+        tformRaw = tformList{k};
 
-        if isempty(segImg) || isempty(tform) || ~isa(tform, 'affine2d')
-            transformedSegmented{k} = [];
+        if isempty(segImg)
+            segmentedOverlapMasks{k} = [];
             continue;
         end
 
-        if size(segImg, 3) == 3
-            % RGB image: apply transform channel-wise
-            warpedImg = zeros(refSize(1), refSize(2), 3, 'like', segImg);
-            for ch = 1:3
-                warpedImg(:,:,ch) = imwarp(segImg(:,:,ch), tform, ...
+        % Fallback: If no transform, store original
+        if isempty(tformRaw)
+            segmentedOverlapMasks{k} = segImg;
+            continue;
+        end
+
+        % Convert to affine2d if needed
+        try
+            if ~isa(tformRaw, 'affine2d')
+                tform = affine2d(tformRaw.T);
+            else
+                tform = tformRaw;
+            end
+        catch
+            segmentedOverlapMasks{k} = [];
+            continue;
+        end
+
+        % Apply transformation
+        try
+            if size(segImg, 3) == 3
+                warpedImg = zeros(refSize(1), refSize(2), 3, 'like', segImg);
+                for ch = 1:3
+                    warpedImg(:,:,ch) = imwarp(segImg(:,:,ch), tform, ...
+                        'OutputView', outputRef, ...
+                        'InterpolationMethod', 'nearest', ...
+                        'FillValues', 0);
+                end
+            else
+                warpedImg = imwarp(segImg, tform, ...
                     'OutputView', outputRef, ...
                     'InterpolationMethod', 'nearest', ...
                     'FillValues', 0);
             end
-        else
-            % Single-channel (label map)
-            warpedImg = imwarp(segImg, tform, ...
-                'OutputView', outputRef, ...
-                'InterpolationMethod', 'nearest', ...
-                'FillValues', 0);
-        end
 
-        transformedSegmented{k} = warpedImg;
+            segmentedOverlapMasks{k} = warpedImg;
+        catch
+            segmentedOverlapMasks{k} = [];
+        end
     end
 end

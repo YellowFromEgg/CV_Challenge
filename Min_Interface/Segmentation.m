@@ -30,7 +30,7 @@ function finalLabelMap = segment_image(I)
     finalLabelMap(labelCityLand == 2) = 2;  
     finalLabelMap(labelCityLand == 3) = 3;  
     finalLabelMap(labelCityLand == 7) = 7;  
-    finalLabelMap(labelRivers == 5)    = 5;  
+    finalLabelMap(labelRivers == 5)   = 5;  
 
     % --- Step 3: Resolve ambiguous areas ---
     finalLabelMap = classify_unclassified_by_color(finalLabelMap, R, G, B, H, S, V);

@@ -105,6 +105,21 @@ classdef SatelliteImageRegistration < handle
         end
 
         function applyTransformsToSegmentations(obj)
+        %APPLYTRANSFORMSTOSEGMENTATIONS Wrapper that calls external function
+        % Applies transforms and stores results in obj.segmentedOverlapMasks
+        
+            if isempty(obj.segmentedMaps) || isempty(obj.tformList)
+                warning('Segmentations or transformations missing. Skipping transformation.');
+                return;
+            end
+        
+            % Call the external function and store results in the class
+            obj.segmentedOverlapMasks = Transform_Segmented_Images( ...
+                obj.segmentedMaps, obj.tformList, obj.refIdx);
+        end
+
+
+        function applyTransformsToSegmentations2(obj)
             if isempty(obj.segmentedMaps) || isempty(obj.tformList)
                 warning('You must run segmentation and registration first.');
                 return;
