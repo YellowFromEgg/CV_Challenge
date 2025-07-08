@@ -49,9 +49,85 @@ function [registeredColorImages, validImageIndices, refIdx, tformList] = Registe
         validImageIndices = [validImageIndices, i]; % Add to valid list
     end
 
+    % **NEW: Apply common content mask to all registered images**
+    for i = 1:numImages
+        registeredColorImages{i} = im2double(registeredColorImages{i});
+    end
+    registeredColorImages = applyCommonContentMask(registeredColorImages, validImageIndices);
+    
+    registeredColorImages = matchBrightnessAcrossImages(registeredColorImages);
+
     tEnd = toc(tStart); % Stop timing
     disp(tEnd); % Display total processing time
 
+end
+
+%% -- Apply mask to keep only common content --
+function maskedImages = applyCommonContentMask(registeredImages, validIndices)
+    if isempty(validIndices) || length(validIndices) < 2
+        maskedImages = registeredImages;
+        return;
+    end
+    
+    % Get dimensions from first valid image
+    firstValidIdx = validIndices(1);
+    [h, w, ~] = size(registeredImages{firstValidIdx});
+    
+    % Initialize common content mask (start with all pixels as valid)
+    commonMask = true(h, w);
+    
+    % For each valid registered image, find areas with actual content
+    for i = 1:length(validIndices)
+        idx = validIndices(i);
+        img = registeredImages{idx};
+        
+        if isempty(img)
+            continue;
+        end
+        
+        % Create mask for valid pixels (not black/empty)
+        if size(img, 3) == 3
+            % RGB: pixel is valid if any channel > 0
+            validPixelMask = any(img > 0, 3);
+        else
+            % Grayscale: pixel is valid if > 0
+            validPixelMask = img > 0;
+        end
+        
+        % Keep only areas that are valid in ALL images
+        commonMask = commonMask & validPixelMask;
+    end
+    
+    % Apply common mask to all registered images
+    maskedImages = registeredImages;
+    
+    for i = 1:length(validIndices)
+        idx = validIndices(i);
+        img = registeredImages{idx};
+        
+        if isempty(img)
+            continue;
+        end
+        
+        % Apply mask to image
+        if size(img, 3) == 3
+            % RGB image
+            for c = 1:3
+                channel = img(:,:,c);
+                channel(~commonMask) = 0; % Set non-common areas to black
+                img(:,:,c) = channel;
+            end
+        else
+            % Grayscale image
+            img(~commonMask) = 0; % Set non-common areas to black
+        end
+        
+        maskedImages{idx} = img;
+    end
+    
+    % Calculate and display statistics
+    commonPercent = sum(commonMask(:)) / numel(commonMask) * 100;
+    fprintf('Common content area: %.1f%% of total image area\n', commonPercent);
 end
 
 %% --- Enhanced preprocessing ---
@@ -77,6 +153,93 @@ function grayImage = preprocessImage(img, scene)
 
     grayImage = img; % Return processed image
 end
+
+%% --- Normalize Registered Colored images ---
+% function matchedImages = matchBrightnessAcrossImages(colorImages)
+%     numImages = numel(colorImages);
+%     matchedImages = cell(size(colorImages));
+% 
+%     % Convert all to HSV
+%     hsvImages = cell(size(colorImages));
+%     for i = 1:numImages
+%         hsvImages{i} = rgb2hsv(colorImages{i});
+%     end
+% 
+%     % Choose a reference (e.g., middle image)
+%     refIdx = round(numImages / 2);
+%     refV = hsvImages{refIdx}(:,:,3);  % Reference brightness channel
+% 
+%     % Apply histogram matching
+%     for i = 1:numImages
+%         hsv = hsvImages{i};
+%         hsv(:,:,3) = imhistmatch(hsv(:,:,3), refV);  % Match brightness
+%         matchedImages{i} = hsv2rgb(hsv);             % Convert back to RGB
+%     end
+% end
+
+function matchedImages = matchBrightnessAcrossImages(colorImages)
+    numImages = numel(colorImages);
+    matchedImages = cell(size(colorImages));
+    
+    % Store original data type
+    originalDataType = class(colorImages{1});
+    
+    % Convert to double for processing
+    for i = 1:numImages
+        colorImages{i} = im2double(colorImages{i});
+    end
+    
+    % Choose reference image (middle image)
+    refIdx2 = round(numImages / 2);
+    refImage = colorImages{refIdx2};
+    
+    % Convert reference to grayscale for brightness matching
+    refGray = rgb2gray(refImage);
+    
+    % Process each image
+    for i = 1:numImages
+        currentImage = colorImages{i};
+        currentGray = rgb2gray(currentImage);
+        
+        % Method 1: Simple histogram matching on grayscale, then apply to RGB
+        % This is the most conservative approach
+        matchedGray = imhistmatch(currentGray, refGray);
+        
+        % Calculate the adjustment factor
+        % Avoid division by zero
+        adjustmentFactor = matchedGray ./ (currentGray + eps);
+        
+        % Apply the same adjustment to all RGB channels
+        adjustedImage = currentImage;
+        for ch = 1:3
+            adjustedImage(:,:,ch) = currentImage(:,:,ch) .* adjustmentFactor;
+        end
+        
+        % Alternative method if the above creates artifacts (uncomment to try):
+        % Convert to HSV and only match the V (brightness) channel
+        % hsv = rgb2hsv(currentImage);
+        % refHsv = rgb2hsv(refImage);
+        % hsv(:,:,3) = imhistmatch(hsv(:,:,3), refHsv(:,:,3));
+        % adjustedImage = hsv2rgb(hsv);
+        
+        matchedImages{i} = adjustedImage;
+        
+        % Ensure values are in valid range
+        matchedImages{i} = max(0, min(1, matchedImages{i}));
+    end
+    
+    % Convert back to original data type
+    if strcmp(originalDataType, 'uint8')
+        for i = 1:numImages
+            matchedImages{i} = im2uint8(matchedImages{i});
+        end
+    elseif strcmp(originalDataType, 'uint16')
+        for i = 1:numImages
+            matchedImages{i} = im2uint16(matchedImages{i});
+        end
+    end
+end
+
 
 %% Create Mask
 function maskedImage = applyEntropyMask(grayImg)
@@ -234,7 +397,7 @@ function [registeredColor, tform] = registerImages(gray1, gray2, colorImg2, scen
         
         while inlierCount < 5 && i <= length(MaxDistance_list) % Try different distance thresholds
             % Robust transformation estimation
-            [tform, inlierIdx] = estgeotform2d(matched2, matched1, 'similarity', ... % Estimate similarity transformation
+            [tform, inlierIdx] = estgeotform2d(matched2, matched1, 'affine', ... % Estimate similarity transformation
                 'MaxNumTrials', 3000, 'Confidence', 93, 'MaxDistance', MaxDistance_list(i)); % Using RANSAC
             
             inlierCount = sum(inlierIdx); % Count inlier matches
@@ -373,10 +536,10 @@ function [surfParams, cornerParams] = getSceneParametersWithCorners(sceneType)
             % Default parameters
             surfParams.threshold = 400; % Default threshold
             surfParams.octaves = 3; % Default octaves
-            surfParams.maxRatio = 0.9; % Default matching ratio
+            surfParams.maxRatio = 0.8; % Default matching ratio
             
             cornerParams.cornerQuality = 0.015; % Default quality threshold
-            cornerParams.cornerFilterSize = 5; % Default filter size
-            cornerParams.maxRatio = 0.9;
+            cornerParams.cornerFilterSize = 3; % Default filter size
+            cornerParams.maxRatio = 0.8;
     end
 end
