@@ -22,19 +22,21 @@ function finalLabelMap = segment_image(I)
     labelSnowWater = detection_Snow_Water(I, gray, R, G, B);  
     labelSnowWater = detect_water(labelSnowWater, H, S, V, R, G, B); 
     labelCityLand  = detect_city_land(I, H, S, V, R, G, B);  
-    labelCityLand  = detect_forest(labelCityLand, H, S, V, R, G, B);  
-    labelRivers    = detectRivers(I, gray, R, G, B); 
+    %labelCityLand  = detect_forest(labelCityLand, H, S, V, R, G, B);  
+    %labelRivers    = detectRivers(I, gray, R, G, B); 
 
     % --- Step 2: Combine masks ---
     finalLabelMap = labelSnowWater;
     finalLabelMap(labelCityLand == 2) = 2;  
     finalLabelMap(labelCityLand == 3) = 3;  
     finalLabelMap(labelCityLand == 7) = 7;  
-    finalLabelMap(labelRivers == 5)   = 5;  
+    %finalLabelMap(labelRivers == 5)   = 5;  
 
     % --- Step 3: Resolve ambiguous areas ---
     finalLabelMap = classify_unclassified_by_color(finalLabelMap, R, G, B, H, S, V);
-    finalLabelMap = resolve_water_forest_conflict(finalLabelMap, gray, H, S, V, R, G, B);
+    %finalLabelMap = convert_water_surrounded_by_city(finalLabelMap);
+    %finalLabelMap = resolve_water_forest_conflict(finalLabelMap, gray, H, S, V, R, G, B);
+    
     
     % Combine Forest/Water
     finalLabelMap(finalLabelMap == 7)   = 1;
@@ -278,6 +280,91 @@ function labelMap = detection_Snow_Water(I, grayImg, Rn, Gn, Bn)
     end
 end
 
+function labelMap = detection_Snow_Water2(I, grayImg, Rn, Gn, Bn)
+    imgSize = size(grayImg);
+    edgeDensity = conv2(double(edge(grayImg, 'Canny')), ones(15)/225, 'same');
+    smoothMask = edgeDensity < 0.05;
+    smoothMask = imfill(bwareaopen(smoothMask, 500), 'holes');
+
+    CC = bwconncomp(smoothMask);
+    stats = regionprops(CC, 'PixelIdxList', 'Area', 'Eccentricity');
+
+    for k = 1:numel(stats)
+        if stats(k).Eccentricity < 0.6 || stats(k).Area < 100
+            smoothMask(stats(k).PixelIdxList) = false;
+        end
+    end
+
+    CC = bwconncomp(smoothMask);
+    stats = regionprops(CC, 'PixelIdxList');
+
+    labelMap = zeros(imgSize, 'uint8');
+
+    for k = 1:CC.NumObjects
+        idx = stats(k).PixelIdxList;
+        rMean = mean(Rn(idx));
+        gMean = mean(Gn(idx));
+        bMean = mean(Bn(idx));
+
+        if rMean > 0.75 && gMean > 0.75 && bMean > 0.75
+            labelMap(idx) = 4;  % Snow
+        elseif bMean > rMean && bMean > gMean
+            labelMap(idx) = 1;  % Water
+        end
+    end
+
+    % Filter small snow areas
+    snowMask = (labelMap == 4);
+    Lsnow = bwlabel(snowMask);
+    statsSnow = regionprops(Lsnow, 'Area');
+    for i = 1:numel(statsSnow)
+        if statsSnow(i).Area < 3000
+            labelMap(Lsnow == i) = 0;
+        end
+    end
+
+    % Filter small water areas
+    blueDominant = (Bn > 0.35) & (Bn > Rn + 0.08) & (Bn > Gn + 0.05);
+    cyanLike = (Bn > 0.4) & (Gn > 0.4) & (Rn < 0.4) & (abs(Bn - Gn) < 0.15);
+    pixelWater = blueDominant | cyanLike;
+
+    L = bwlabel(pixelWater);
+    statsWater = regionprops(L, 'Area');
+    for i = 1:numel(statsWater)
+        if statsWater(i).Area < 3000
+            pixelWater(L == i) = false;
+        end
+    end
+    labelMap(pixelWater) = 1;
+
+    % Apply whiteish map if any snow label exists
+    if any(labelMap(:) == 4)
+        whiteish = (Rn > 0.7) & (Gn > 0.7) & (Bn > 0.7);
+        labelMap(whiteish) = 4;
+    end
+
+    % --- SHADOW DETECTION ---
+    brightness = (Rn + Gn + Bn) / 3;
+    globalMean = mean(brightness(:));
+    globalStd = std(brightness(:));
+
+    % Shadows = regions significantly darker than global average
+    shadowThresh = globalMean - 1.0 * globalStd;  % adjust factor as needed
+    shadowMask = brightness < shadowThresh;
+
+    % Optional: clean up small shadow patches
+    Lshadow = bwlabel(shadowMask);
+    statsShadow = regionprops(Lshadow, 'Area');
+    for i = 1:numel(statsShadow)
+        if statsShadow(i).Area < 3000
+            shadowMask(Lshadow == i) = false;
+        end
+    end
+
+    labelMap(shadowMask) = 8;  % Shadow class
+end
+
+
 function labelMap = detect_water(labelMap, H, S, V, R, G, B)
     % Only look at pixels labeled as unclassified or land
     mask = (labelMap == 0) | (labelMap == 2);
@@ -364,6 +451,38 @@ function labelMap = resolve_water_forest_conflict(labelMap, gray, H, S, V, R, G,
     end
 end
 
+function labelMap = convert_water_surrounded_by_city(finalLabelMap)
+    labelMap = finalLabelMap;  % Copy input
+    waterLabel = 1;
+    cityLabel = 3;
+
+    % Get water regions
+    waterMask = (finalLabelMap == waterLabel);
+    CC = bwconncomp(waterMask);
+    cityMask = (finalLabelMap == cityLabel);
+
+    % Structuring element for border detection
+    se = strel('square', 3);
+
+    for k = 1:CC.NumObjects
+        regionIdx = CC.PixelIdxList{k};
+
+        % Create binary mask of region
+        regionMask = false(size(finalLabelMap));
+        regionMask(regionIdx) = true;
+
+        % Get border of region (dilate - region)
+        borderMask = imdilate(regionMask, se) & ~regionMask;
+
+        % Border pixels that touch city
+        cityTouchCount = sum(cityMask(borderMask));
+        totalBorder = nnz(borderMask);
+
+        if totalBorder > 0 && (cityTouchCount / totalBorder) >= 0.9
+            labelMap(regionIdx) = cityLabel;
+        end
+    end
+end
 
 %% detection unclassified
 

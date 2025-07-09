@@ -37,13 +37,15 @@ classdef SatelliteImageRegistration < handle
 
         function run(obj)
             %RUN  Convenience wrapper: load → register → display.
-            obj.loadImages();
-            obj.segmentImages(); 
-            obj.registerImages('city');   % default preset; change as needed
+            %obj.loadImages();
+            % obj.segmentImages(); 
+            % obj.registerImages('city');   % default preset; change as needed
             obj.displayRegisteredImages();
-            obj.applyTransformsToSegmentations();
-            obj.displaySegmentedImages();           
-            obj.displayTransformedSegmentations();  
+            % obj.applyTransformsToSegmentations();
+            %obj.displaySegmentedImages();           
+            %obj.displayTransformedSegmentations();
+            % obj.plotClassStatistics();
+            obj.plotClassHeatmap();
         end
 
         function selectFolder(obj, folder)
@@ -128,6 +130,23 @@ classdef SatelliteImageRegistration < handle
             obj.segmentedOverlapMasks = Transform_Segmented_Images(obj.segmentedMaps, obj.tformList, refSize(1:2));
         end
 
+        function plotClassStatistics(obj)
+            %PLOTCLASSTRENDS Calls external function to show class trends
+            if isempty(obj.segmentedOverlapMasks)
+                warning('Segmented overlap masks are empty. Run applyTransformsToSegmentations first.');
+                return;
+            end
+            Plot_Class_Percentages_Over_Time(obj.segmentedOverlapMasks, obj.imageFiles);
+        end
+
+        function plotClassHeatmap(obj)
+            if isempty(obj.segmentedOverlapMasks)
+                warning('Segmented overlap masks are empty. Run applyTransformsToSegmentations first.');
+                return;
+            end
+            Plot_Class_Heatmap(obj.segmentedOverlapMasks, obj.imageFiles);
+        end
+        
 
 
         function displayRegisteredImages(obj)
