@@ -1,4 +1,4 @@
-function [registeredColorImages, validImageIndices, refIdx, tformList] = Register_Color_Images(colorImages, numImages, scene)
+function [successfulImages, validImageIndices, refIdx, tformList] = Register_Color_Images(colorImages, numImages, scene)
     close all; % Close all figure windows
     warning('off', 'vision:ransac:maxTrialsReached'); % disable warnings that come from RANSAC
 
@@ -43,18 +43,43 @@ function [registeredColorImages, validImageIndices, refIdx, tformList] = Registe
             continue; % Skip this image
         end
     
+        % Calculate percentage of valid (non-black) content
+        if size(registeredColor, 3) == 3
+            % RGB: pixel is valid if any channel > 0
+            validMask = any(registeredColor > 0, 3);
+        else
+            % Grayscale: pixel is valid if > 0
+            validMask = registeredColor > 0;
+        end
+        
+        validContentPercent = sum(validMask(:)) / numel(validMask) * 100;
+        minValidContentThreshold = 30; % Minimum 30% valid content required
+        
+        if validContentPercent < minValidContentThreshold
+            fprintf('Image %d: insufficient valid content (%.1f%% < %.1f%%) - skipping\n', ...
+                    i, validContentPercent, minValidContentThreshold);
+            continue; % Skip this image
+        end
+    
         % Store the registered color image
         registeredColorImages{i} = registeredColor; % Store successful registration
         validImageIndices = [validImageIndices, i]; % Add to valid list
     end
 
-    % **NEW: Apply common content mask to all registered images**
-    for i = 1:numImages
-        registeredColorImages{i} = im2double(registeredColorImages{i});
+    % Create compact array with only successful images
+    successfulImages = cell(length(validImageIndices), 1);
+    for i = 1:length(validImageIndices)
+        idx = validImageIndices(i);
+        successfulImages{i} = registeredColorImages{idx};
     end
-    registeredColorImages = applyCommonContentMask(registeredColorImages, validImageIndices);
+
+    % Apply common content mask to all registered images
+    for i = 1:length(validImageIndices)
+        successfulImages{i} = im2double(successfulImages{i});
+    end
+    successfulImages = applyCommonContentMask(successfulImages, validImageIndices);
     
-    registeredColorImages = matchBrightnessAcrossImages(registeredColorImages);
+    successfulImages = matchBrightnessAcrossImages(successfulImages);
 end
 
 %% -- Apply mask to keep only common content --
@@ -64,17 +89,15 @@ function maskedImages = applyCommonContentMask(registeredImages, validIndices)
         return;
     end
     
-    % Get dimensions from first valid image
-    firstValidIdx = validIndices(1);
-    [h, w, ~] = size(registeredImages{firstValidIdx});
+    % Get dimensions
+    [h, w, ~] = size(registeredImages{1});
     
     % Initialize common content mask (start with all pixels as valid)
     commonMask = true(h, w);
     
     % For each valid registered image, find areas with actual content
     for i = 1:length(validIndices)
-        idx = validIndices(i);
-        img = registeredImages{idx};
+        img = registeredImages{i};
         
         if isempty(img)
             continue;
@@ -88,7 +111,6 @@ function maskedImages = applyCommonContentMask(registeredImages, validIndices)
             % Grayscale: pixel is valid if > 0
             validPixelMask = img > 0;
         end
-        
         % Keep only areas that are valid in ALL images
         commonMask = commonMask & validPixelMask;
     end
@@ -97,8 +119,7 @@ function maskedImages = applyCommonContentMask(registeredImages, validIndices)
     maskedImages = registeredImages;
     
     for i = 1:length(validIndices)
-        idx = validIndices(i);
-        img = registeredImages{idx};
+        img = registeredImages{i};
         
         if isempty(img)
             continue;
@@ -117,7 +138,7 @@ function maskedImages = applyCommonContentMask(registeredImages, validIndices)
             img(~commonMask) = 0; % Set non-common areas to black
         end
         
-        maskedImages{idx} = img;
+        maskedImages{i} = img;
     end
     
     % Calculate and display statistics
@@ -160,8 +181,8 @@ function matchedImages = matchBrightnessAcrossImages(colorImages)
     end
 
     % Choose a reference (e.g., middle image)
-    refIdx = round(numImages / 2);
-    refV = hsvImages{refIdx}(:,:,3);  % Reference brightness channel
+    refIdx2 = round(numImages / 2);
+    refV = hsvImages{refIdx2}(:,:,3);  % Reference brightness channel
 
     % Apply histogram matching
     for i = 1:numImages
@@ -273,7 +294,7 @@ function [success, featureCount] = testRegistration(gray1, gray2, scene)
             
         featureCount = sum(inlierIdx); % Count inlier features
 
-        if featureCount >= 4 % If enough good matches found
+        if featureCount >= 5 % If enough good matches found
             success = 1; % Mark as successful
         end
         
@@ -334,23 +355,8 @@ function [registeredColor, tform] = registerImages(gray1, gray2, colorImg2, scen
         
             i = i + 1; % Move to next distance threshold
         end
-        
-        % % safety check based on resulting image size
-        % scl = hypot(tform.T(1,1), tform.T(2,1));     % isotropic scale
-        % rot = atan2d(tform.T(2,1), tform.T(1,1));    % rotation in degrees
-        % tx  = tform.T(3,1);  ty = tform.T(3,2);      % translation (pixels)
-        % 
-        % % % project-dependent limits – massively scaled images are skipped
-        % if  scl < 0.75 || scl > 1.75 || ...          % ≤ ±75 % zoom allowed
-        %     abs(tx) > 0.8*size(gray1,2) || ...       % ≤ 80 % width translation
-        %     abs(ty) > 0.8*size(gray1,1)
-        %     warning('Rejected registration: scale=%.3f  rot=%.1f°  Δx=%d  Δy=%d', ...
-        %             scl, rot, round(tx), round(ty));
-        %     registeredColor = [];
-        %     return
-        % end
 
-        if inlierCount < 2 % If too few inliers
+        if inlierCount < 5 % If too few inliers
             registeredColor = []; % Return empty result
             return;
         end
