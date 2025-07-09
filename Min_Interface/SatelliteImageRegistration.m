@@ -16,6 +16,7 @@ classdef SatelliteImageRegistration < handle
         tformList              cell    % Cell array of affine2d objects
         segmentedMaps          cell    % Segmentation output for each image
         segmentedOverlapMasks  cell    % Overlap masks after transformation
+        scene                  string  % Majority of image gets classified as city or land
     end
 
     %% =====             Constructor & high-level API              ===== %%
@@ -40,8 +41,8 @@ classdef SatelliteImageRegistration < handle
             obj.loadImages();
             obj.segmentImages(); 
             obj.detectScene();
-            % obj.registerImages('city');   % default preset; change as needed
-            % obj.displayRegisteredImages();
+            obj.registerImages();   % default preset; change as needed
+            obj.displayRegisteredImages();
             % obj.applyTransformsToSegmentations();
             % obj.displaySegmentedImages();           
             % obj.displayTransformedSegmentations();  
@@ -90,7 +91,7 @@ classdef SatelliteImageRegistration < handle
 
         function detectScene(obj)
             %DETECTSCENES Detect scene in segmented images
-            classNames = {'Unclassified','Water/Forest','Land','Urban/Agriculture','Snow','River/Road'};
+            classNames = {'Water/Forest','Land','Urban/Agriculture','Snow','Unclassified'};
             valueCounts = zeros(1, 5);  % To store counts for values 1 to 5
             totalCount = 0;             % Total number of pixels
             
@@ -105,13 +106,16 @@ classdef SatelliteImageRegistration < handle
             % Calculate percentage
             percentages = (valueCounts / totalCount) * 100;
             
-            % Display results
-            for val = 1:5
-                fprintf('Value %s: %.2f%%\n', classNames{val}, percentages(val));
+            % Get scene identifier - city if over 75% accordance
+            if percentages(3) >= 75
+                obj.scene = 'city';
+            else
+                obj.scene = 'nature';
             end
+
         end
 
-        function registerImages(obj, varargin)
+        function registerImages(obj)
             %REGISTERIMAGES  Wrapper around Register_Color_Images
 
             if isempty(obj.colorImages)
@@ -123,7 +127,7 @@ classdef SatelliteImageRegistration < handle
              obj.validIndices,          ...
              obj.refIdx,                ...
              obj.tformList] = Register_Color_Images( ...
-                                   obj.colorImages, numImages, varargin{:});
+                                   obj.colorImages, numImages, obj.scene);
         end
 
         function applyTransformsToSegmentations(obj)
