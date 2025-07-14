@@ -22,14 +22,14 @@ The system automatically registers satellite images from the same location taken
 - **`Transform_Segmented_Images.m`** - Applies geometric transformations to segmented masks
 
 ### Visualization Functions
-- **`Plot_Class_Heatmap.m`** - 
-- **`Plot_Class_Percentages_Over_Time.m`** - 
-- **`Veraenderungszeitpunkte.m`** - 
-- **`heatmap_veraenderungshauefigkeit.m`** - 
-- **`timelapseSlider.m`** - 
-- **`timelapse_bilderfolge.m`** - 
-- **`visualisiere_veraenderungen_nach_flaeche.m`** - 
-- **`visualize_schnell_langsam.m`** - 
+- **`Plot_Class_Heatmap.m`** - Generates heatmaps showing the frequency of pixel changes across all images, with a color scale indicating how often each pixel has changed over time
+- **`Plot_Class_Percentages_Over_Time.m`** - Plots the percentage distribution of different classes or change types over the time series
+- **`Veraenderungszeitpunkte.m`** - Visualizes when specific areas changed in the image sequence, with each change timepoint represented by a unique color (overlapping colors for pixels that changed multiple times)
+- **`heatmap_veraenderungshauefigkeit.m`** - Creates frequency heatmaps showing how often each pixel changed throughout the entire image sequence
+- **`timelapseSlider.m`** - Interactive timelapse viewer with slider control for navigating through the image sequence
+- **`timelapse_bilderfolge.m`** - Generates automated timelapse animations from the image sequence
+- **`visualisiere_veraenderungen_nach_flaeche.m`** - Visualizes changes categorized by size (small/large changes based on connected pixel groups), with adjustable threshold for defining large vs. small changes
+- **`visualize_schnell_langsam.m`** - Analyzes and visualizes the speed of changes by comparing average vs. maximum pixel changes (red for fast changes: high max/low average, blue for slow changes: low max/high average)
 
 ## Usage
 
