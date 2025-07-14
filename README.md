@@ -1,10 +1,4 @@
-Readme: Erstellen Sie eine Readme.txt Datei, die ei-
-ne Anleitung Ihrer Applikation und eine Liste aller f¨ur
-die Ausf¨uhrung der Applikation notwendigen Toolbo-
-xen beinhaltet.
-
-# Satellite Image Change Detection - MATLAB Project
-
+# Satellite Image Change Detection - The Changing Face of Earth
 This MATLAB project implements a computer vision pipeline for detecting and visualizing changes in satellite imagery over time, as part of the Computer Vision Challenge (SoSe 2025) at TUM.
 
 ## Overview
@@ -35,14 +29,12 @@ The system automatically registers satellite images from the same location taken
 
 ### Basic Usage
 ```matlab
-% Create instance and run complete pipeline
-reg = SatelliteImageRegistration('path/to/image/folder');
-reg.run();
+placeholder
 ```
 
 ## File Requirements
 
-Images should be named following the pattern `YYYY_MM.extension` (e.g., `2020_11.jpg`, `2019_04.png`) and stored in a single folder. Minimum 2 images required.
+Images should be named following the pattern `MM_YYYY.extension` (e.g., `11_2020.jpg`, `04_2019.png`) and stored in a single folder. Minimum 2 images required.
 
 ## Required MATLAB Toolboxes
 
