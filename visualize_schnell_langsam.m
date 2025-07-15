@@ -1,62 +1,63 @@
 function visualize_schnell_langsam(registrierteBilder, targetAxes)
-% Visualisiert Veränderungen (langsam → schnell) in einem
-% Bildstapel: schnelle Pixelbewegungen erscheinen rot, langsame blau.
-% Alle Ausgaben erfolgen in den übergebenen UIAxes.
+% Visualizes changes (slow → fast) in an image stack: fast pixel motion
+% appears red, slow motion appears blue. All output is rendered in the
+% provided UIAxes.
 
-    %% 1. Vorverarbeitung -------------------------------------------------
-    N = numel(registrierteBilder);                 % Anzahl der Eingabebilder
-    if N < 2                                       % Sicherstellen, dass
-        error('Mindestens zwei Bilder nötig.');    % ein Bildpaar vorliegt
+    %% 1. Pre-processing ---------------------------------------------------
+    N = numel(registrierteBilder);                 % Number of input images
+    if N < 2                                       % Ensure at least one image pair exists
+        error('Mindestens zwei Bilder nötig.');    
     end
-    cla(targetAxes);                               % Ziel-Achse leeren
+    cla(targetAxes);                               % Clear target axes
 
     for k = 1:N
-        I = im2double(registrierteBilder{k});      % in [0 … 1] skalieren
+        I = im2double(registrierteBilder{k});      % Normalize to [0 … 1]
 
-        if size(I,3) == 3                          % RGB? → Graustufen
+        if size(I,3) == 3                          % RGB → convert to grayscale
             I = rgb2gray(I);
         end
 
-        if k == 1                                  % Stack einmalig anlegen
-            [r,c]  = size(I);                      % Bildgröße ermitteln
-            imgStack = zeros(r,c,N);               % 3-D-Array vormerken
+        if k == 1                                  % Allocate stack once
+            [r,c]  = size(I);                      % Determine image size
+            imgStack = zeros(r,c,N);               % Reserve 3-D array
         end
 
-        imgStack(:,:,k) = I;                       % Slice in Stack schreiben
+        imgStack(:,:,k) = I;                       % Insert slice into stack
     end
 
-    %% 2. Veränderungsanalyse ---------------------------------------------
-    diffs     = abs(diff(imgStack,1,3));           % |Differenz| jedes Frames
-    slow_norm = mat2gray(mean(diffs,3));           % Mittelwert → „langsam“
-    fast_norm = mat2gray(max(diffs,[],3));         % Maximum  → „schnell“
-    composite = cat(3, fast_norm, ...              % Rot-Kanal  = schnell
-                       zeros(size(slow_norm)), ... % Grün-Kanal = 0
-                       slow_norm);                 % Blau-Kanal = langsam
+    %% 2. Change analysis --------------------------------------------------
+    diffs     = abs(diff(imgStack,1,3));           % |Difference| for every frame pair
+    slow_norm = mat2gray(mean(diffs,3));           % Mean    → “slow” map
+    fast_norm = mat2gray(max(diffs,[],3));         % Maximum → “fast” map
+    composite = cat(3, fast_norm, ...              % Red   channel  = fast
+                       zeros(size(slow_norm)), ... % Green channel = 0
+                       slow_norm);                 % Blue  channel  = slow
 
-    %% 3. Bild anzeigen ----------------------------------------------------
-    imshow(composite, ...                          % RGB-Composite darstellen
+    %% 3. Display composite ------------------------------------------------
+    imshow(composite, ...                          % Show RGB composite
            'Parent', targetAxes, ...
            'InitialMagnification','fit');
     title(targetAxes, ...
           'Veränderungen: schnell (rot) vs. langsam (blau)', ...
           'FontWeight','bold');
 
-    %% 4. Farb-Legende vorbereiten ----------------------------------------
-    fig = ancestor(targetAxes, 'figure');          % übergeordnete Figur
-    delete(findall(fig, 'Tag', 'customLegend'));   % evtl. alte Legende löschen
+    %% 4. Prepare color legend --------------------------------------------
+    fig = ancestor(targetAxes, 'figure');          % Parent figure handle
+    delete(findall(fig, 'Tag', 'customLegend'));   % Remove any existing legend axes
 
-    % Position der Achse (erst in Pixel umschalten, dann zurückstellen)
-    axPosNorm  = get(targetAxes, 'Position');      % (hier nicht weiter genutzt)
+    % Get axis position (temporarily switch to pixel units, then restore)
+    axPosNorm  = get(targetAxes, 'Position');      
     axUnitsOld = get(targetAxes, 'Units');         
     set(targetAxes, 'Units', 'pixels');
     axPos = get(targetAxes, 'Position');           % [left bottom width height]
     set(targetAxes, 'Units', axUnitsOld);
 
-    % Zielkoordinaten der Legende (rechts vom Bild, gleiche Höhe)
-    legWidth  = 25;                                % Balkenbreite in Pixeln
-    legLeft   = axPos(1) + axPos(3) + 10;          % 10 px Abstand zum Bild
+    % Legend coordinates (to the right of the image, same height)
+    legWidth  = 25;                                % Bar width in pixels
+    legLeft   = axPos(1) + axPos(3) + 10;          % 10-px gap from the image
     legBottom = axPos(2);
     legHeight = axPos(4);
 
    
 end
+
