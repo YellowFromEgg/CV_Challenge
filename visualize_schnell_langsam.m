@@ -58,23 +58,5 @@ function visualize_schnell_langsam(registrierteBilder, targetAxes)
     legBottom = axPos(2);
     legHeight = axPos(4);
 
-    % ---------- Beispielcode für eine UI-Achse (auskommentiert) ----------
-    %{
-    legendAxes = axes('Parent', fig, ...           % Neue Achse für Farbbalken
-                      'Units',  'pixels', ...
-                      'Position',[legLeft, legBottom, legWidth, legHeight], ...
-                      'Tag',    'customLegend');
-
-    n    = 256;                                    % Anzahl Farbstufen
-    cmap = [linspace(0,1,n)'  zeros(n,1)  linspace(1,0,n)']; % Blau→Rot
-    image(legendAxes, reshape(cmap,[n 1 3]));      % Balken zeichnen
-    set(legendAxes, 'YDir', 'normal', ...          % Blau unten, Rot oben
-                    'XTick', [], ...
-                    'YTick', [1 n], ...
-                    'YTickLabel', {'0','max'}, ...
-                    'FontWeight', 'bold', ...
-                    'Box', 'on');
-    ylabel(legendAxes, 'Veränderungsgröße', ...    % Achsenbeschriftung
-           'FontWeight', 'bold');
-    %}
+   
 end
