@@ -27,14 +27,16 @@ The system automatically registers satellite images from the same location taken
 
 ## Usage
 
-### Basic Usage
-```matlab
-placeholder
-```
+To run the application:
+- Execute `ChangeDetectionApp.mltbx` in MATLAB
+- Dependencies and requirements will install automatically
+
+For usage guidance:
+- Check the `HELP` tab within the GUI once the app is running
 
 ## File Requirements
 
-Images should be named following the pattern `MM_YYYY.extension` (e.g., `11_2020.jpg`, `04_2019.png`) and stored in a single folder. Minimum 2 images required.
+Images should be named following the pattern `MM_YYYY.extension` (e.g., `11_2020.jpg`, `04_2019.png`) or `YYYY_MM.extension` (e.g., `2020_11.jpg`, `2019_04.png`)  and stored in a single folder. Minimum 2 images required.
 
 ## Required MATLAB Toolboxes
 
