@@ -1,6 +1,7 @@
 function Veraenderungszeitpunkte(registrierteBilder, imageFiles, thr, targetAxes)
 % Visualises change pairs using colour coding.
 %
+imageFiles
 % registrierteBilder : cell array with RGB images (already registered)
 % imageFiles         : corresponding file names (used for date labels)
 % thr                : threshold in the range [0 … 1]
@@ -91,4 +92,3 @@ function Veraenderungszeitpunkte(registrierteBilder, imageFiles, thr, targetAxes
         'Box', 'off');
     hold(targetAxes, 'off');
 end
-
