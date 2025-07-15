@@ -29,8 +29,7 @@ The system automatically registers satellite images from the same location taken
 ## Usage
 
 To run the application:
-- Execute `ChangeDetectionApp.mltbx` in MATLAB
-- Dependencies and requirements will install automatically
+- Execute `ChangeDetectionApp.mlapp` in MATLAB
 
 For usage guidance:
 - Check the `HELP` tab within the GUI once the app is running
