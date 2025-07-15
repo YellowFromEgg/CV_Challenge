@@ -42,7 +42,7 @@ function finalLabelMap = segment_image(I)
     finalLabelMap(finalLabelMap == 7)   = 1;
     % Combine Sand/Land
     finalLabelMap(finalLabelMap == 6)   = 2;
-
+    finalLabelMap(labelSnowWater == 4) = 4; % Re-apply Snow over everything else
     % (Optional visualization: remove comment to enable)
     % show_segmented_map(I, finalLabelMap);
 end
