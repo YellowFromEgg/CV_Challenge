@@ -1,5 +1,6 @@
 # Satellite Image Change Detection - The Changing Face of Earth
 This MATLAB project implements a computer vision pipeline for detecting and visualizing changes in satellite imagery over time, as part of the Computer Vision Challenge (SoSe 2025) at TUM.
+(Link to github repository: https://github.com/YellowFromEgg/CV_Challenge)
 
 ## Overview
 
@@ -28,8 +29,7 @@ The system automatically registers satellite images from the same location taken
 ## Usage
 
 To run the application:
-- Execute `ChangeDetectionApp.mltbx` in MATLAB
-- Dependencies and requirements will install automatically
+- Execute `ChangeDetectionApp.mlapp` in MATLAB
 
 For usage guidance:
 - Check the `HELP` tab within the GUI once the app is running
@@ -51,4 +51,3 @@ The system provides:
 - Segmented land-use maps with 6 classes
 - Multiple change visualization options (heatmaps, temporal plots, timelapse)
 - Interactive GUI for parameter adjustment and visualization selection
-
