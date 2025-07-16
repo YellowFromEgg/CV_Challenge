@@ -1,5 +1,5 @@
 # Satellite Image Change Detection - The Changing Face of Earth
-This MATLAB project implements a computer vision pipeline for detecting and visualizing changes in satellite imagery over time, as part of the Computer Vision Challenge (SoSe 2025) at TUM.
+This MATLAB project implements a computer vision pipeline for detecting and visualizing changes in satellite imagery over time, as part of the Computer Vision Challenge (SoSe 2025) at TUM. See G16 for our full project.
 
 ## Overview
 
